@@ -4,7 +4,7 @@ from datetime import datetime
 from pathlib import Path
 
 from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 app = FastAPI(title="JivoChat Webhook Inspector")
 
@@ -61,7 +61,10 @@ async def list_logs():
             })
         except Exception:
             pass
-    return result
+    return Response(
+        content=json.dumps(result, ensure_ascii=False, indent=2),
+        media_type="application/json",
+    )
 
 
 @app.get("/jivo/logs/{filename}")
