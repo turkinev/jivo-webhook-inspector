@@ -1,6 +1,8 @@
+import asyncio
 import json
 import logging
 import os
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 
@@ -19,6 +21,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Пул потоков для синхронных CH-вызовов (не блокируют event loop)
+executor = ThreadPoolExecutor(max_workers=4)
+
 # ClickHouse — настройки через переменные окружения
 CH_HOST     = os.getenv("CH_HOST", "localhost")
 CH_PORT     = int(os.getenv("CH_PORT", "8123"))
@@ -34,6 +39,8 @@ def get_ch_client():
         username=CH_USER,
         password=CH_PASSWORD,
         database=CH_DATABASE,
+        connect_timeout=5,   # таймаут подключения 5 сек
+        send_receive_timeout=10,
     )
 
 
@@ -46,8 +53,8 @@ def save_payload(event_type: str, payload: dict) -> Path:
     return filename
 
 
-def insert_to_clickhouse(payload: dict):
-    """Вставляет chat_finished событие в ClickHouse."""
+def _insert_sync(payload: dict):
+    """Синхронная вставка в CH — запускается в thread pool."""
     chat_id = int(payload.get("chat_id", 0))
     event_name = payload.get("event_name", "chat_finished")
     payload_json = json.dumps(payload, ensure_ascii=False)
@@ -59,6 +66,19 @@ def insert_to_clickhouse(payload: dict):
         column_names=["event_name", "chat_id", "payload_json"],
     )
     client.close()
+
+
+def _health_check_sync():
+    """Синхронная проверка CH — запускается в thread pool."""
+    client = get_ch_client()
+    client.query("SELECT 1")
+    client.close()
+
+
+async def insert_to_clickhouse(payload: dict):
+    """Асинхронная обёртка над вставкой в CH."""
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(executor, _insert_sync, payload)
 
 
 @app.post("/jivo/webhook")
@@ -78,7 +98,7 @@ async def jivo_webhook(request: Request):
     # Сохраняем в ClickHouse только завершенные чаты
     if event_type == "chat_finished":
         try:
-            insert_to_clickhouse(payload)
+            await insert_to_clickhouse(payload)
             logger.info(f"[CH] inserted chat_id={payload.get('chat_id')}")
         except Exception as e:
             logger.error(f"[CH] insert failed: {e}")
@@ -126,9 +146,13 @@ async def health():
     """Статус сервиса + проверка подключения к ClickHouse."""
     ch_status = "ok"
     try:
-        client = get_ch_client()
-        client.query("SELECT 1")
-        client.close()
+        loop = asyncio.get_event_loop()
+        await asyncio.wait_for(
+            loop.run_in_executor(executor, _health_check_sync),
+            timeout=6.0,
+        )
+    except asyncio.TimeoutError:
+        ch_status = "error: timeout"
     except Exception as e:
         ch_status = f"error: {e}"
 
