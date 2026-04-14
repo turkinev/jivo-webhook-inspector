@@ -47,7 +47,7 @@ async def jivo_webhook(request: Request):
 
 @app.get("/jivo/logs")
 async def list_logs():
-    """Показывает список сохраненных хуков."""
+    """Показывает список сохраненных хуков с полными данными."""
     files = sorted(LOG_DIR.glob("*.json"), reverse=True)[:50]
     result = []
     for f in files:
@@ -55,9 +55,9 @@ async def list_logs():
             data = json.loads(f.read_text(encoding="utf-8"))
             result.append({
                 "file": f.name,
-                "event": data.get("event", "?"),
+                "event": data.get("event_name") or data.get("event", "?"),
                 "timestamp": f.stem.split("_")[0] + "_" + f.stem.split("_")[1],
-                "keys": list(data.keys()),
+                "payload": data,
             })
         except Exception:
             pass
