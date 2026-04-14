@@ -5,8 +5,6 @@ import os
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
-from pathlib import Path
 
 from fastapi import FastAPI, Request, HTTPException, BackgroundTasks
 from fastapi.responses import JSONResponse, Response
@@ -14,9 +12,6 @@ from fastapi.responses import JSONResponse, Response
 from ai_processor import analyze_and_save
 
 app = FastAPI(title="JivoChat Webhook Inspector")
-
-LOG_DIR = Path("logs")
-LOG_DIR.mkdir(exist_ok=True)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -49,15 +44,6 @@ def ch_request(query: str, data: bytes = None, timeout: int = 10) -> str:
     return resp.read().decode()
 
 
-def save_payload(event_type: str, payload: dict) -> Path:
-    """Сохраняет каждый хук в отдельный файл для изучения."""
-    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S_%f")
-    filename = LOG_DIR / f"{timestamp}_{event_type}.json"
-    with open(filename, "w", encoding="utf-8") as f:
-        json.dump(payload, f, ensure_ascii=False, indent=2)
-    return filename
-
-
 def extract_dialog_row(payload: dict) -> dict:
     """Разбирает payload chat_finished в плоскую структуру для jivo_chat_dialogs."""
     visitor  = payload.get("visitor") or {}
@@ -73,25 +59,25 @@ def extract_dialog_row(payload: dict) -> dict:
     agent_texts   = [m["message"] for m in messages if m.get("type") == "agent"]
 
     return {
-        "event_name":           payload.get("event_name", "chat_finished"),
-        "event_timestamp":      payload.get("event_timestamp"),          # Unix int → DateTime
-        "chat_id":              int(payload.get("chat_id", 0)),
-        "widget_id":            payload.get("widget_id") or "",
-        "visitor_id":           int(visitor.get("number", 0)),
-        "visitor_name":         visitor.get("name"),
-        "visitor_chats_count":  int(visitor.get("chats_count") or 0),
-        "operator_id":          int(agent["id"]) if agent.get("id") else None,
-        "operator_name":        agent.get("name"),
-        "page_url":             page.get("url"),
-        "page_title":           page.get("title"),
-        "geo_country":          geoip.get("country"),
-        "geo_region":           geoip.get("region"),
-        "geo_city":             geoip.get("city"),
-        "chat_messages_json":   json.dumps(messages, ensure_ascii=False),
-        "invite_timestamp":     chat.get("invite_timestamp"),            # Unix int → DateTime
-        "chat_rate":            payload.get("chat_rate"),
-        "plain_messages":       payload.get("plain_messages") or "",
-        "full_dialog_text":     payload.get("plain_messages") or "",
+        "event_name":            payload.get("event_name", "chat_finished"),
+        "event_timestamp":       payload.get("event_timestamp"),
+        "chat_id":               int(payload.get("chat_id", 0)),
+        "widget_id":             payload.get("widget_id") or "",
+        "visitor_id":            int(visitor.get("number", 0)),
+        "visitor_name":          visitor.get("name"),
+        "visitor_chats_count":   int(visitor.get("chats_count") or 0),
+        "operator_id":           int(agent["id"]) if agent.get("id") else None,
+        "operator_name":         agent.get("name"),
+        "page_url":              page.get("url"),
+        "page_title":            page.get("title"),
+        "geo_country":           geoip.get("country"),
+        "geo_region":            geoip.get("region"),
+        "geo_city":              geoip.get("city"),
+        "chat_messages_json":    json.dumps(messages, ensure_ascii=False),
+        "invite_timestamp":      chat.get("invite_timestamp"),
+        "chat_rate":             payload.get("chat_rate"),
+        "plain_messages":        payload.get("plain_messages") or "",
+        "full_dialog_text":      payload.get("plain_messages") or "",
         "visitor_messages_text": "\n".join(visitor_texts),
         "agent_messages_text":   "\n".join(agent_texts),
     }
@@ -135,7 +121,7 @@ async def insert_to_clickhouse(payload: dict):
 
 @app.post("/jivo/webhook")
 async def jivo_webhook(request: Request, background_tasks: BackgroundTasks):
-    """Принимает все события от JivoChat и логирует их."""
+    """Принимает все события от JivoChat."""
     try:
         body = await request.body()
         payload = json.loads(body)
@@ -143,57 +129,52 @@ async def jivo_webhook(request: Request, background_tasks: BackgroundTasks):
         raise HTTPException(status_code=400, detail="Invalid JSON")
 
     event_type = payload.get("event_name") or payload.get("event", "unknown")
-    filename = save_payload(event_type, payload)
 
-    logger.info(f"[JIVO] event={event_type} | chat_id={payload.get('chat_id')} | saved={filename.name}")
+    logger.info(f"[JIVO] event={event_type} | chat_id={payload.get('chat_id')}")
 
-    # Сохраняем в ClickHouse только завершенные чаты
     if event_type == "chat_finished":
         try:
             await insert_to_clickhouse(payload)
             logger.info(f"[CH] inserted chat_id={payload.get('chat_id')}")
         except Exception as e:
             logger.error(f"[CH] insert failed: {e}")
-            # Не возвращаем ошибку JivoChat — хук уже сохранен в файл
 
-        # AI-анализ запускается в фоне — JivoChat не ждёт результата
         background_tasks.add_task(analyze_and_save, payload)
 
-    # JivoChat ждет 200 OK — иначе будет ретраить
     return JSONResponse({"result": "ok"})
 
 
 @app.get("/jivo/logs")
 async def list_logs():
-    """Показывает список сохраненных хуков с полными данными."""
-    files = sorted(LOG_DIR.glob("*.json"), reverse=True)[:50]
-    result = []
-    for f in files:
+    """Последние 50 диалогов из raw_jivo_chat."""
+    def _query():
+        return ch_request(
+            "SELECT chat_id, event_name, received_at, payload_json "
+            "FROM raw_jivo_chat "
+            "ORDER BY received_at DESC "
+            "LIMIT 50 "
+            "FORMAT JSONEachRow"
+        )
+
+    loop = asyncio.get_event_loop()
+    try:
+        raw = await loop.run_in_executor(executor, _query)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    rows = []
+    for line in raw.strip().splitlines():
         try:
-            data = json.loads(f.read_text(encoding="utf-8"))
-            result.append({
-                "file": f.name,
-                "event": data.get("event_name") or data.get("event", "?"),
-                "timestamp": f.stem.split("_")[0] + "_" + f.stem.split("_")[1],
-                "payload": data,
-            })
+            row = json.loads(line)
+            row["payload"] = json.loads(row.pop("payload_json", "{}"))
+            rows.append(row)
         except Exception:
             pass
+
     return Response(
-        content=json.dumps(result, ensure_ascii=False, indent=2),
+        content=json.dumps(rows, ensure_ascii=False, indent=2),
         media_type="application/json",
     )
-
-
-@app.get("/jivo/logs/{filename}")
-async def get_log(filename: str):
-    """Возвращает конкретный хук по имени файла."""
-    if "/" in filename or ".." in filename:
-        raise HTTPException(status_code=400, detail="Invalid filename")
-    path = LOG_DIR / filename
-    if not path.exists():
-        raise HTTPException(status_code=404, detail="Not found")
-    return json.loads(path.read_text(encoding="utf-8"))
 
 
 @app.get("/health")
@@ -213,6 +194,5 @@ async def health():
 
     return {
         "status": "ok",
-        "logs_count": len(list(LOG_DIR.glob("*.json"))),
         "clickhouse": ch_status,
     }
