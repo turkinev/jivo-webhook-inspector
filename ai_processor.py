@@ -10,6 +10,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -106,7 +107,7 @@ def build_prompt(payload: dict) -> str:
 # AI call
 # ---------------------------------------------------------------------------
 
-def call_ai(prompt: str) -> str | None:
+def call_ai(prompt: str) -> Optional[str]:
     """Вызывает AI через прокси, возвращает текст ответа или None при ошибке."""
     headers_bytes = (
         f"Authorization: Bearer {AI_API_KEY}\r\n"
@@ -160,7 +161,7 @@ def call_ai(prompt: str) -> str | None:
 # Parse AI response
 # ---------------------------------------------------------------------------
 
-def parse_response(ai_text: str) -> dict | None:
+def parse_response(ai_text: str) -> Optional[dict]:
     """Парсит JSON из ответа модели, снимает markdown-обёртку если есть."""
     text = ai_text.strip()
     if text.startswith("```"):
