@@ -62,14 +62,15 @@ def _insert_sync(payload: dict):
     event_name = payload.get("event_name", "chat_finished")
     payload_json = json.dumps(payload, ensure_ascii=False)
 
-    # Экранируем одинарные кавычки в JSON
-    payload_json_escaped = payload_json.replace("'", "\\'")
+    # Данные шлем в теле запроса через JSONEachRow — избегаем ограничения URL
+    row = json.dumps({
+        "event_name": event_name,
+        "chat_id": chat_id,
+        "payload_json": payload_json,
+    }, ensure_ascii=False)
 
-    query = (
-        f"INSERT INTO raw_jivo_chat (event_name, chat_id, payload_json) "
-        f"VALUES ('{event_name}', {chat_id}, '{payload_json_escaped}')"
-    )
-    ch_request(query)
+    query = "INSERT INTO raw_jivo_chat (event_name, chat_id, payload_json) FORMAT JSONEachRow"
+    ch_request(query, data=row.encode("utf-8"))
 
 
 def _health_check_sync():
