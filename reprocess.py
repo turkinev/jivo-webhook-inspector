@@ -32,7 +32,7 @@ def load_dotenv(path: str = ".env"):
         key, _, value = line.partition("=")
         # Снимаем кавычки если есть
         value = value.strip().strip('"').strip("'")
-        os.environ.setdefault(key.strip(), value)
+        os.environ[key.strip()] = value  # всегда перезаписываем
 
 
 # Загружаем .env ДО импорта ai_processor (он читает os.environ на уровне модуля)
