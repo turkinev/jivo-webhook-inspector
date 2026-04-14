@@ -56,21 +56,67 @@ def save_payload(event_type: str, payload: dict) -> Path:
     return filename
 
 
+def extract_dialog_row(payload: dict) -> dict:
+    """Разбирает payload chat_finished в плоскую структуру для jivo_chat_dialogs."""
+    visitor  = payload.get("visitor") or {}
+    agents   = payload.get("agents") or []
+    agent    = agents[0] if agents else {}
+    page     = payload.get("page") or {}
+    session  = payload.get("session") or {}
+    geoip    = session.get("geoip") or {}
+    chat     = payload.get("chat") or {}
+    messages = chat.get("messages") or []
+
+    visitor_texts = [m["message"] for m in messages if m.get("type") == "visitor"]
+    agent_texts   = [m["message"] for m in messages if m.get("type") == "agent"]
+
+    return {
+        "event_name":           payload.get("event_name", "chat_finished"),
+        "event_timestamp":      payload.get("event_timestamp"),          # Unix int → DateTime
+        "chat_id":              int(payload.get("chat_id", 0)),
+        "widget_id":            payload.get("widget_id") or "",
+        "visitor_id":           int(visitor.get("number", 0)),
+        "visitor_name":         visitor.get("name"),
+        "visitor_chats_count":  int(visitor.get("chats_count") or 0),
+        "operator_id":          int(agent["id"]) if agent.get("id") else None,
+        "operator_name":        agent.get("name"),
+        "page_url":             page.get("url"),
+        "page_title":           page.get("title"),
+        "geo_country":          geoip.get("country"),
+        "geo_region":           geoip.get("region"),
+        "geo_city":             geoip.get("city"),
+        "chat_messages_json":   json.dumps(messages, ensure_ascii=False),
+        "invite_timestamp":     chat.get("invite_timestamp"),            # Unix int → DateTime
+        "chat_rate":            payload.get("chat_rate"),
+        "plain_messages":       payload.get("plain_messages") or "",
+        "full_dialog_text":     payload.get("plain_messages") or "",
+        "visitor_messages_text": "\n".join(visitor_texts),
+        "agent_messages_text":   "\n".join(agent_texts),
+    }
+
+
 def _insert_sync(payload: dict):
     """Синхронная вставка в CH — запускается в thread pool."""
-    chat_id = int(payload.get("chat_id", 0))
+    chat_id    = int(payload.get("chat_id", 0))
     event_name = payload.get("event_name", "chat_finished")
-    payload_json = json.dumps(payload, ensure_ascii=False)
 
-    # Данные шлем в теле запроса через JSONEachRow — избегаем ограничения URL
-    row = json.dumps({
-        "event_name": event_name,
-        "chat_id": chat_id,
-        "payload_json": payload_json,
+    # 1. raw_jivo_chat — полный payload как JSON-строка
+    raw_row = json.dumps({
+        "event_name":   event_name,
+        "chat_id":      chat_id,
+        "payload_json": json.dumps(payload, ensure_ascii=False),
     }, ensure_ascii=False)
+    ch_request(
+        "INSERT INTO raw_jivo_chat (event_name, chat_id, payload_json) FORMAT JSONEachRow",
+        data=raw_row.encode("utf-8"),
+    )
 
-    query = "INSERT INTO raw_jivo_chat (event_name, chat_id, payload_json) FORMAT JSONEachRow"
-    ch_request(query, data=row.encode("utf-8"))
+    # 2. jivo_chat_dialogs — структурированные поля
+    dialog_row = json.dumps(extract_dialog_row(payload), ensure_ascii=False)
+    ch_request(
+        "INSERT INTO jivo_chat_dialogs FORMAT JSONEachRow",
+        data=dialog_row.encode("utf-8"),
+    )
 
 
 def _health_check_sync():
