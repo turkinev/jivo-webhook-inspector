@@ -36,7 +36,7 @@ async def jivo_webhook(request: Request):
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="Invalid JSON")
 
-    event_type = payload.get("event", "unknown")
+    event_type = payload.get("event_name") or payload.get("event", "unknown")
     filename = save_payload(event_type, payload)
 
     logger.info(f"[JIVO] event={event_type} | keys={list(payload.keys())} | saved={filename.name}")
