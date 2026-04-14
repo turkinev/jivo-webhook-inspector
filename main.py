@@ -8,8 +8,10 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, BackgroundTasks
 from fastapi.responses import JSONResponse, Response
+
+from ai_processor import analyze_and_save
 
 app = FastAPI(title="JivoChat Webhook Inspector")
 
@@ -132,7 +134,7 @@ async def insert_to_clickhouse(payload: dict):
 
 
 @app.post("/jivo/webhook")
-async def jivo_webhook(request: Request):
+async def jivo_webhook(request: Request, background_tasks: BackgroundTasks):
     """Принимает все события от JivoChat и логирует их."""
     try:
         body = await request.body()
@@ -153,6 +155,9 @@ async def jivo_webhook(request: Request):
         except Exception as e:
             logger.error(f"[CH] insert failed: {e}")
             # Не возвращаем ошибку JivoChat — хук уже сохранен в файл
+
+        # AI-анализ запускается в фоне — JivoChat не ждёт результата
+        background_tasks.add_task(analyze_and_save, payload)
 
     # JivoChat ждет 200 OK — иначе будет ретраить
     return JSONResponse({"result": "ok"})
