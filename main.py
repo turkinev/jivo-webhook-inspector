@@ -1,8 +1,10 @@
 import json
 import logging
+import os
 from datetime import datetime
 from pathlib import Path
 
+import clickhouse_connect
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse, Response
 
@@ -17,14 +19,46 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# ClickHouse — настройки через переменные окружения
+CH_HOST     = os.getenv("CH_HOST", "localhost")
+CH_PORT     = int(os.getenv("CH_PORT", "8123"))
+CH_USER     = os.getenv("CH_USER", "default")
+CH_PASSWORD = os.getenv("CH_PASSWORD", "")
+CH_DATABASE = os.getenv("CH_DATABASE", "default")
 
-def save_payload(event_type: str, payload: dict):
+
+def get_ch_client():
+    return clickhouse_connect.get_client(
+        host=CH_HOST,
+        port=CH_PORT,
+        username=CH_USER,
+        password=CH_PASSWORD,
+        database=CH_DATABASE,
+    )
+
+
+def save_payload(event_type: str, payload: dict) -> Path:
     """Сохраняет каждый хук в отдельный файл для изучения."""
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S_%f")
     filename = LOG_DIR / f"{timestamp}_{event_type}.json"
     with open(filename, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
     return filename
+
+
+def insert_to_clickhouse(payload: dict):
+    """Вставляет chat_finished событие в ClickHouse."""
+    chat_id = int(payload.get("chat_id", 0))
+    event_name = payload.get("event_name", "chat_finished")
+    payload_json = json.dumps(payload, ensure_ascii=False)
+
+    client = get_ch_client()
+    client.insert(
+        table="raw_jivo_chat",
+        data=[[event_name, chat_id, payload_json]],
+        column_names=["event_name", "chat_id", "payload_json"],
+    )
+    client.close()
 
 
 @app.post("/jivo/webhook")
@@ -39,7 +73,16 @@ async def jivo_webhook(request: Request):
     event_type = payload.get("event_name") or payload.get("event", "unknown")
     filename = save_payload(event_type, payload)
 
-    logger.info(f"[JIVO] event={event_type} | keys={list(payload.keys())} | saved={filename.name}")
+    logger.info(f"[JIVO] event={event_type} | chat_id={payload.get('chat_id')} | saved={filename.name}")
+
+    # Сохраняем в ClickHouse только завершенные чаты
+    if event_type == "chat_finished":
+        try:
+            insert_to_clickhouse(payload)
+            logger.info(f"[CH] inserted chat_id={payload.get('chat_id')}")
+        except Exception as e:
+            logger.error(f"[CH] insert failed: {e}")
+            # Не возвращаем ошибку JivoChat — хук уже сохранен в файл
 
     # JivoChat ждет 200 OK — иначе будет ретраить
     return JSONResponse({"result": "ok"})
@@ -80,4 +123,17 @@ async def get_log(filename: str):
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "logs_count": len(list(LOG_DIR.glob("*.json")))}
+    """Статус сервиса + проверка подключения к ClickHouse."""
+    ch_status = "ok"
+    try:
+        client = get_ch_client()
+        client.query("SELECT 1")
+        client.close()
+    except Exception as e:
+        ch_status = f"error: {e}"
+
+    return {
+        "status": "ok",
+        "logs_count": len(list(LOG_DIR.glob("*.json"))),
+        "clickhouse": ch_status,
+    }

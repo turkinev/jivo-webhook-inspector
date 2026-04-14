@@ -28,6 +28,7 @@ After=network.target
 [Service]
 User=root
 WorkingDirectory=$APP_DIR
+EnvironmentFile=-$APP_DIR/.env
 ExecStart=$APP_DIR/venv/bin/uvicorn main:app --host 0.0.0.0 --port 6200
 Restart=always
 RestartSec=5
