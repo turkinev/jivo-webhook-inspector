@@ -2,11 +2,12 @@ import asyncio
 import json
 import logging
 import os
+import urllib.parse
+import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 
-import clickhouse_connect
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse, Response
 
@@ -32,16 +33,18 @@ CH_PASSWORD = os.getenv("CH_PASSWORD", "")
 CH_DATABASE = os.getenv("CH_DATABASE", "default")
 
 
-def get_ch_client():
-    return clickhouse_connect.get_client(
-        host=CH_HOST,
-        port=CH_PORT,
-        username=CH_USER,
-        password=CH_PASSWORD,
-        database=CH_DATABASE,
-        connect_timeout=5,   # таймаут подключения 5 сек
-        send_receive_timeout=10,
-    )
+def ch_request(query: str, data: bytes = None, timeout: int = 10) -> str:
+    """Выполняет запрос к ClickHouse через HTTP API."""
+    params = urllib.parse.urlencode({
+        "query": query,
+        "user": CH_USER,
+        "password": CH_PASSWORD,
+        "database": CH_DATABASE,
+    })
+    url = f"http://{CH_HOST}:{CH_PORT}/?{params}"
+    req = urllib.request.Request(url, data=data, method="POST" if data else "GET")
+    resp = urllib.request.urlopen(req, timeout=timeout)
+    return resp.read().decode()
 
 
 def save_payload(event_type: str, payload: dict) -> Path:
@@ -59,20 +62,20 @@ def _insert_sync(payload: dict):
     event_name = payload.get("event_name", "chat_finished")
     payload_json = json.dumps(payload, ensure_ascii=False)
 
-    client = get_ch_client()
-    client.insert(
-        table="raw_jivo_chat",
-        data=[[event_name, chat_id, payload_json]],
-        column_names=["event_name", "chat_id", "payload_json"],
+    # Экранируем одинарные кавычки в JSON
+    payload_json_escaped = payload_json.replace("'", "\\'")
+
+    query = (
+        f"INSERT INTO raw_jivo_chat (event_name, chat_id, payload_json) "
+        f"VALUES ('{event_name}', {chat_id}, '{payload_json_escaped}')"
     )
-    client.close()
+    ch_request(query)
 
 
 def _health_check_sync():
     """Синхронная проверка CH — запускается в thread pool."""
-    client = get_ch_client()
-    client.query("SELECT 1")
-    client.close()
+    result = ch_request("SELECT 1")
+    assert result.strip() == "1", f"Unexpected response: {result}"
 
 
 async def insert_to_clickhouse(payload: dict):
