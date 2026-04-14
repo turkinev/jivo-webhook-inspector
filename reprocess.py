@@ -12,11 +12,31 @@
 
 import argparse
 import json
+import os
 import sys
 import time
 import urllib.parse
 import urllib.request
 from pathlib import Path
+
+
+def load_dotenv(path: str = ".env"):
+    """Загружает .env файл в os.environ, корректно обрабатывает значения с пробелами."""
+    env_path = Path(path)
+    if not env_path.exists():
+        return
+    for line in env_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        # Снимаем кавычки если есть
+        value = value.strip().strip('"').strip("'")
+        os.environ.setdefault(key.strip(), value)
+
+
+# Загружаем .env ДО импорта ai_processor (он читает os.environ на уровне модуля)
+load_dotenv("/opt/jivo_inspector/.env")
 
 # Подгружаем конфиг и процессор из той же папки
 sys.path.insert(0, str(Path(__file__).parent))
