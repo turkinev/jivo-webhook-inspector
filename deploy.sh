@@ -28,7 +28,7 @@ After=network.target
 [Service]
 User=root
 WorkingDirectory=$APP_DIR
-ExecStart=$APP_DIR/venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000
+ExecStart=$APP_DIR/venv/bin/uvicorn main:app --host 0.0.0.0 --port 6200
 Restart=always
 RestartSec=5
 
@@ -42,7 +42,7 @@ systemctl restart "$SERVICE_NAME"
 
 echo ""
 echo "=== Готово ==="
-echo "Сервис запущен на порту 8000"
-echo "Endpoint для JivoChat: http://$(hostname -I | awk '{print $1}'):8000/jivo/webhook"
-echo "Просмотр логов: http://$(hostname -I | awk '{print $1}'):8000/jivo/logs"
+echo "Сервис запущен на порту 6200"
+echo "Endpoint для JivoChat: http://$(hostname -I | awk '{print $1}'):6200/jivo/webhook"
+echo "Просмотр логов: http://$(hostname -I | awk '{print $1}'):6200/jivo/logs"
 echo "Системные логи: journalctl -u $SERVICE_NAME -f"
