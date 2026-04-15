@@ -119,24 +119,33 @@ def period_filters(period: str):
 def collect_stats(period: str) -> dict:
     cf, ct, pf, pt = period_filters(period)
 
+    # Подзапрос: берём timestamp из raw_jivo_chat (там есть received_at DEFAULT now())
+    ts_subquery = """(
+        SELECT chat_id, max(received_at) AS ts
+        FROM raw_jivo_chat
+        WHERE event_name = 'chat_finished'
+        GROUP BY chat_id
+    )"""
+
     # -- Общие счётчики -------------------------------------------------
     rows = ch_query(f"""
         SELECT
-            countIf(toDate(analyzed_at) >= {cf} AND toDate(analyzed_at) < {ct})  AS cur_total,
-            countIf(toDate(analyzed_at) >= {pf} AND toDate(analyzed_at) < {pt})  AS prev_total,
-            countIf(toDate(analyzed_at) >= {cf} AND toDate(analyzed_at) < {ct} AND user_emotion = 'Негатив')     AS cur_neg,
-            countIf(toDate(analyzed_at) >= {pf} AND toDate(analyzed_at) < {pt} AND user_emotion = 'Негатив')     AS prev_neg,
-            countIf(toDate(analyzed_at) >= {cf} AND toDate(analyzed_at) < {ct} AND user_emotion = 'Нейтральный') AS cur_neu,
-            countIf(toDate(analyzed_at) >= {cf} AND toDate(analyzed_at) < {ct} AND user_emotion = 'Позитив')     AS cur_pos,
-            countIf(toDate(analyzed_at) >= {cf} AND toDate(analyzed_at) < {ct} AND resolution_status = 'Решено')    AS cur_resolved,
-            countIf(toDate(analyzed_at) >= {cf} AND toDate(analyzed_at) < {ct} AND resolution_status = 'Не решено') AS cur_unresolved,
-            countIf(toDate(analyzed_at) >= {cf} AND toDate(analyzed_at) < {ct} AND resolution_status = 'Частично')  AS cur_partial,
-            countIf(toDate(analyzed_at) >= {cf} AND toDate(analyzed_at) < {ct} AND resolution_status = 'Эскалация') AS cur_escalation,
-            countIf(toDate(analyzed_at) >= {cf} AND toDate(analyzed_at) < {ct} AND needs_escalation = 1)            AS cur_needs_esc,
-            countIf(toDate(analyzed_at) >= {cf} AND toDate(analyzed_at) < {ct} AND churn_risk_score >= 0.8)         AS cur_high_churn,
-            round(avgIf(agent_quality_score, toDate(analyzed_at) >= {cf} AND toDate(analyzed_at) < {ct}), 1) AS cur_quality_avg,
-            round(avgIf(agent_quality_score, toDate(analyzed_at) >= {pf} AND toDate(analyzed_at) < {pt}), 1) AS prev_quality_avg
-        FROM jivo_chat_analysis
+            countIf(toDate(r.ts) >= {cf} AND toDate(r.ts) < {ct})  AS cur_total,
+            countIf(toDate(r.ts) >= {pf} AND toDate(r.ts) < {pt})  AS prev_total,
+            countIf(toDate(r.ts) >= {cf} AND toDate(r.ts) < {ct} AND a.user_emotion = 'Негатив')     AS cur_neg,
+            countIf(toDate(r.ts) >= {pf} AND toDate(r.ts) < {pt} AND a.user_emotion = 'Негатив')     AS prev_neg,
+            countIf(toDate(r.ts) >= {cf} AND toDate(r.ts) < {ct} AND a.user_emotion = 'Нейтральный') AS cur_neu,
+            countIf(toDate(r.ts) >= {cf} AND toDate(r.ts) < {ct} AND a.user_emotion = 'Позитив')     AS cur_pos,
+            countIf(toDate(r.ts) >= {cf} AND toDate(r.ts) < {ct} AND a.resolution_status = 'Решено')    AS cur_resolved,
+            countIf(toDate(r.ts) >= {cf} AND toDate(r.ts) < {ct} AND a.resolution_status = 'Не решено') AS cur_unresolved,
+            countIf(toDate(r.ts) >= {cf} AND toDate(r.ts) < {ct} AND a.resolution_status = 'Частично')  AS cur_partial,
+            countIf(toDate(r.ts) >= {cf} AND toDate(r.ts) < {ct} AND a.resolution_status = 'Эскалация') AS cur_escalation,
+            countIf(toDate(r.ts) >= {cf} AND toDate(r.ts) < {ct} AND a.needs_escalation = 1)            AS cur_needs_esc,
+            countIf(toDate(r.ts) >= {cf} AND toDate(r.ts) < {ct} AND a.churn_risk_score >= 0.8)         AS cur_high_churn,
+            round(avgIf(a.agent_quality_score, toDate(r.ts) >= {cf} AND toDate(r.ts) < {ct}), 1) AS cur_quality_avg,
+            round(avgIf(a.agent_quality_score, toDate(r.ts) >= {pf} AND toDate(r.ts) < {pt}), 1) AS prev_quality_avg
+        FROM jivo_chat_analysis a
+        JOIN {ts_subquery} r ON a.chat_id = r.chat_id
         FORMAT JSONEachRow
     """)
     t = rows[0] if rows else {}
@@ -144,18 +153,17 @@ def collect_stats(period: str) -> dict:
     # -- Топ категорий с примерами проблем ------------------------------
     categories = ch_query(f"""
         SELECT
-            category,
-            countIf(toDate(analyzed_at) >= {cf} AND toDate(analyzed_at) < {ct})  AS cur_cnt,
-            countIf(toDate(analyzed_at) >= {pf} AND toDate(analyzed_at) < {pt})  AS prev_cnt,
+            a.category AS category,
+            countIf(toDate(r.ts) >= {cf} AND toDate(r.ts) < {ct}) AS cur_cnt,
+            countIf(toDate(r.ts) >= {pf} AND toDate(r.ts) < {pt}) AS prev_cnt,
             arrayFilter(x -> x != '', groupArray(5)(
-                if(toDate(analyzed_at) >= {cf}
-                    AND toDate(analyzed_at) < {ct}
-                    AND user_problem_summary != '',
-                    user_problem_summary, '')
+                if(toDate(r.ts) >= {cf} AND toDate(r.ts) < {ct} AND a.user_problem_summary != '',
+                   a.user_problem_summary, '')
             )) AS sample_problems
-        FROM jivo_chat_analysis
-        WHERE category != 'Не определено'
-        GROUP BY category
+        FROM jivo_chat_analysis a
+        JOIN {ts_subquery} r ON a.chat_id = r.chat_id
+        WHERE a.category != 'Не определено'
+        GROUP BY a.category
         HAVING cur_cnt > 0
         ORDER BY cur_cnt DESC
         LIMIT 8
@@ -165,52 +173,56 @@ def collect_stats(period: str) -> dict:
     # -- Бизнес-сигналы -------------------------------------------------
     signals = ch_query(f"""
         SELECT
-            business_signal,
+            a.business_signal AS business_signal,
             count() AS cnt
-        FROM jivo_chat_analysis
-        WHERE toDate(analyzed_at) >= {cf}
-          AND toDate(analyzed_at) < {ct}
-          AND business_signal != 'Нет сигнала'
-        GROUP BY business_signal
+        FROM jivo_chat_analysis a
+        JOIN {ts_subquery} r ON a.chat_id = r.chat_id
+        WHERE toDate(r.ts) >= {cf}
+          AND toDate(r.ts) < {ct}
+          AND a.business_signal != 'Нет сигнала'
+        GROUP BY a.business_signal
         ORDER BY cnt DESC
         FORMAT JSONEachRow
     """)
 
     # -- Эскалации ------------------------------------------------------
     escalations = ch_query(f"""
-        SELECT user_problem_summary
-        FROM jivo_chat_analysis
-        WHERE toDate(analyzed_at) >= {cf}
-          AND toDate(analyzed_at) < {ct}
-          AND needs_escalation = 1
-          AND user_problem_summary != ''
+        SELECT a.user_problem_summary AS user_problem_summary
+        FROM jivo_chat_analysis a
+        JOIN {ts_subquery} r ON a.chat_id = r.chat_id
+        WHERE toDate(r.ts) >= {cf}
+          AND toDate(r.ts) < {ct}
+          AND a.needs_escalation = 1
+          AND a.user_problem_summary != ''
         LIMIT 10
         FORMAT JSONEachRow
     """)
 
     # -- Высокий churn --------------------------------------------------
     high_churn = ch_query(f"""
-        SELECT user_problem_summary
-        FROM jivo_chat_analysis
-        WHERE toDate(analyzed_at) >= {cf}
-          AND toDate(analyzed_at) < {ct}
-          AND churn_risk_score >= 0.8
-          AND user_problem_summary != ''
+        SELECT a.user_problem_summary AS user_problem_summary
+        FROM jivo_chat_analysis a
+        JOIN {ts_subquery} r ON a.chat_id = r.chat_id
+        WHERE toDate(r.ts) >= {cf}
+          AND toDate(r.ts) < {ct}
+          AND a.churn_risk_score >= 0.8
+          AND a.user_problem_summary != ''
         LIMIT 10
         FORMAT JSONEachRow
     """)
 
-    # -- Операторы с низкой оценкой (join с jivo_chat_dialogs) ----------
+    # -- Операторы с низкой оценкой -------------------------------------
     bad_agents = ch_query(f"""
         SELECT
-            d.operator_name,
+            d.operator_name AS operator_name,
             round(avg(a.agent_quality_score), 1) AS avg_score,
             count() AS cnt,
             groupArray(3)(a.agent_quality_comment) AS comments
         FROM jivo_chat_analysis a
+        JOIN {ts_subquery} r ON a.chat_id = r.chat_id
         JOIN jivo_chat_dialogs d ON a.chat_id = d.chat_id
-        WHERE toDate(a.analyzed_at) >= {cf}
-          AND toDate(a.analyzed_at) < {ct}
+        WHERE toDate(r.ts) >= {cf}
+          AND toDate(r.ts) < {ct}
           AND a.agent_quality_label IN ('Плохо', 'Удовлетворительно')
           AND d.operator_name != ''
         GROUP BY d.operator_name
