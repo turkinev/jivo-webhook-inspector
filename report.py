@@ -75,14 +75,14 @@ REPORT_PROMPT = """\
 # ---------------------------------------------------------------------------
 
 def ch_query(sql: str) -> list:
+    # Параметры аутентификации в URL, тело запроса — SQL (POST избегает ограничений длины URL)
     params = urllib.parse.urlencode({
-        "query":    sql,
         "user":     CH_USER,
         "password": CH_PASSWORD,
         "database": CH_DATABASE,
     })
     url = f"http://{CH_HOST}:{CH_PORT}/?{params}"
-    req = urllib.request.Request(url)
+    req = urllib.request.Request(url, data=sql.encode("utf-8"), method="POST")
     resp = urllib.request.urlopen(req, timeout=30)
     rows = []
     for line in resp.read().decode().strip().splitlines():
