@@ -36,11 +36,15 @@ def load_dotenv(path: str = "/opt/jivo_inspector/.env"):
 
 load_dotenv()
 
+import logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
+
 sys.path.insert(0, str(Path(__file__).parent))
 from ai_processor import call_ai, CH_HOST, CH_PORT, CH_USER, CH_PASSWORD, CH_DATABASE
 
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
-TELEGRAM_CHAT_ID   = os.getenv("TELEGRAM_CHAT_ID", "")
+TELEGRAM_BOT_TOKEN  = os.getenv("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID    = os.getenv("TELEGRAM_CHAT_ID", "")
+REPORT_MAX_TOKENS   = int(os.getenv("REPORT_MAX_TOKENS", "4000"))
 
 # ---------------------------------------------------------------------------
 # Промпт для отчёта
@@ -328,8 +332,9 @@ def main():
         print("\n=== ПРОМПТ ДЛЯ AI ===")
         print(prompt[:1000], "...[сокращено]")
 
+    print(f"Размер промпта: {len(prompt)} символов")
     print("Отправляем в AI...")
-    report_text = call_ai(prompt)
+    report_text = call_ai(prompt, max_tokens=REPORT_MAX_TOKENS)
 
     if not report_text:
         print("[error] AI не ответил")

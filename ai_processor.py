@@ -232,18 +232,13 @@ def build_prompt(payload: dict) -> str:
 # AI call
 # ---------------------------------------------------------------------------
 
-def call_ai(prompt: str) -> Optional[str]:
+def call_ai(prompt: str, max_tokens: int = None) -> Optional[str]:
     """Вызывает AI через прокси, возвращает текст ответа или None при ошибке."""
-    headers_bytes = (
-        f"Authorization: Bearer {AI_API_KEY}\r\n"
-        f"Content-Type: application/json\r\n"
-    ).encode()
-
     body = json.dumps({
         "model":       AI_MODEL,
         "messages":    [{"role": "user", "content": prompt}],
         "temperature": AI_TEMPERATURE,
-        "max_tokens":  AI_MAX_TOKENS,
+        "max_tokens":  max_tokens if max_tokens is not None else AI_MAX_TOKENS,
         "stream":      False,
     }, ensure_ascii=False).encode("utf-8")
 
