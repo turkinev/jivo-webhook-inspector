@@ -14,6 +14,7 @@ import argparse
 import json
 import os
 import sys
+import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import date
@@ -83,7 +84,11 @@ def ch_query(sql: str) -> list:
     })
     url = f"http://{CH_HOST}:{CH_PORT}/?{params}"
     req = urllib.request.Request(url, data=sql.encode("utf-8"), method="POST")
-    resp = urllib.request.urlopen(req, timeout=30)
+    try:
+        resp = urllib.request.urlopen(req, timeout=30)
+    except urllib.error.HTTPError as e:
+        body = e.read().decode()
+        raise RuntimeError(f"CH HTTP {e.code}: {body[:500]}") from None
     rows = []
     for line in resp.read().decode().strip().splitlines():
         if line:
@@ -142,12 +147,12 @@ def collect_stats(period: str) -> dict:
             category,
             countIf(toDate(analyzed_at) >= {cf} AND toDate(analyzed_at) < {ct})  AS cur_cnt,
             countIf(toDate(analyzed_at) >= {pf} AND toDate(analyzed_at) < {pt})  AS prev_cnt,
-            groupArrayIf(5)(
-                user_problem_summary,
-                toDate(analyzed_at) >= {cf}
+            arrayFilter(x -> x != '', groupArray(5)(
+                if(toDate(analyzed_at) >= {cf}
                     AND toDate(analyzed_at) < {ct}
-                    AND user_problem_summary != ''
-            ) AS sample_problems
+                    AND user_problem_summary != '',
+                    user_problem_summary, '')
+            )) AS sample_problems
         FROM jivo_chat_analysis
         WHERE category != 'Не определено'
         GROUP BY category
