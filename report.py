@@ -143,7 +143,7 @@ def collect_stats(period: str) -> dict:
             countIf(toDate(r.ts) >= {cf} AND toDate(r.ts) < {ct} AND a.resolution_status = 'Частично')  AS cur_partial,
             countIf(toDate(r.ts) >= {cf} AND toDate(r.ts) < {ct} AND a.resolution_status = 'Эскалация') AS cur_escalation,
             countIf(toDate(r.ts) >= {cf} AND toDate(r.ts) < {ct} AND a.needs_escalation = 1)            AS cur_needs_esc,
-            countIf(toDate(r.ts) >= {cf} AND toDate(r.ts) < {ct} AND a.churn_risk_score >= 0.8)         AS cur_high_churn,
+            countIf(toDate(r.ts) >= {cf} AND toDate(r.ts) < {ct} AND ifNull(a.churn_risk_score, 0) >= 0.8) AS cur_high_churn,
             round(avgIf(a.agent_quality_score, toDate(r.ts) >= {cf} AND toDate(r.ts) < {ct}), 1) AS cur_quality_avg,
             round(avgIf(a.agent_quality_score, toDate(r.ts) >= {pf} AND toDate(r.ts) < {pt}), 1) AS prev_quality_avg
         FROM jivo_chat_analysis a
@@ -207,7 +207,7 @@ def collect_stats(period: str) -> dict:
         JOIN {ts_subquery} r ON a.chat_id = r.chat_id
         WHERE toDate(r.ts) >= {cf}
           AND toDate(r.ts) < {ct}
-          AND a.churn_risk_score >= 0.8
+          AND ifNull(a.churn_risk_score, 0) >= 0.8
           AND a.user_problem_summary != ''
         LIMIT 10
         FORMAT JSONEachRow
@@ -253,8 +253,8 @@ def collect_stats(period: str) -> dict:
         },
         "needs_escalation":    int(t.get("cur_needs_esc", 0)),
         "high_churn_count":    int(t.get("cur_high_churn", 0)),
-        "agent_quality_avg":   float(t.get("cur_quality_avg", 0)),
-        "prev_agent_quality_avg": float(t.get("prev_quality_avg", 0)),
+        "agent_quality_avg":   float(t.get("cur_quality_avg") or 0),
+        "prev_agent_quality_avg": float(t.get("prev_quality_avg") or 0),
         "categories":          categories,
         "business_signals":    signals,
         "escalation_problems": [r["user_problem_summary"] for r in escalations],
