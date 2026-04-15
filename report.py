@@ -112,7 +112,9 @@ def period_filters(period: str):
             "toMonday(today()) - 7",
             "toMonday(today())",
         )
-    # day
+    if period == "yesterday":
+        return "today() - 1", "today()", "today() - 2", "today() - 1"
+    # day = сегодня
     return "today()", "today() + 1", "today() - 1", "today()"
 
 
@@ -299,8 +301,8 @@ def send_telegram(text: str):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--period", choices=["day", "week"], default="day",
-                        help="day = сегодня vs вчера, week = эта неделя vs прошлая")
+    parser.add_argument("--period", choices=["day", "yesterday", "week"], default="yesterday",
+                        help="yesterday = вчера vs позавчера (по умолчанию), day = сегодня vs вчера, week = эта неделя vs прошлая")
     parser.add_argument("--dry-run", action="store_true",
                         help="не отправлять в Telegram, вывести в консоль")
     args = parser.parse_args()
@@ -327,7 +329,7 @@ def main():
         print("[error] AI не ответил")
         return
 
-    period_label = {"day": "день", "week": "неделю"}[args.period]
+    period_label = {"day": "день (сегодня)", "yesterday": "день (вчера)", "week": "неделю"}[args.period]
     full_text = f"📊 *Отчёт за {period_label} — {stats['date']}*\n\n{report_text}"
 
     if args.dry_run:
