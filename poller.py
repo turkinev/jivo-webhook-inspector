@@ -57,13 +57,25 @@ ORDER BY source
 
 
 def ch_exec(sql: str, data: bytes = None) -> str:
-    params = urllib.parse.urlencode({
-        "user": CH_USER, "password": CH_PASSWORD, "database": CH_DATABASE,
-    })
+    # SELECT/DDL — SQL в теле; INSERT с данными — SQL в URL query=, данные в теле
+    if data is not None:
+        params = urllib.parse.urlencode({
+            "query": sql,
+            "user": CH_USER, "password": CH_PASSWORD, "database": CH_DATABASE,
+        })
+        body = data
+    else:
+        params = urllib.parse.urlencode({
+            "user": CH_USER, "password": CH_PASSWORD, "database": CH_DATABASE,
+        })
+        body = sql.encode()
     url = f"http://{CH_HOST}:{CH_PORT}/?{params}"
-    req = urllib.request.Request(url, data=(data or sql.encode()), method="POST")
-    resp = urllib.request.urlopen(req, timeout=15)
-    return resp.read().decode()
+    req = urllib.request.Request(url, data=body, method="POST")
+    try:
+        resp = urllib.request.urlopen(req, timeout=15)
+        return resp.read().decode()
+    except urllib.error.HTTPError as e:
+        raise RuntimeError(f"CH {e.code}: {e.read().decode()[:300]}") from None
 
 
 def ensure_cursor_table():
