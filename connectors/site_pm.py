@@ -7,8 +7,12 @@
   user.user, user.user_orgrole  (база user)
 
 Логика завершённости:
-  Диалог считается завершённым если последнее сообщение было
-  более INACTIVITY_HOURS часов назад.
+  Диалог считается завершённым если:
+    - последнее сообщение было более INACTIVITY_HOURS (1ч) назад
+    - И оператор прочитал тред (thread_user.is_unread = 0 у кого-либо из org_ids)
+
+  Брошенные диалоги (оператор не ответил, is_unread = 1) обрабатываются
+  отдельно в sla_checker.py --mode open.
 """
 
 import json
@@ -30,7 +34,7 @@ PM_DB_PASSWORD = os.getenv("PM_DB_PASSWORD", "dev")
 PM_DB_NAME     = os.getenv("PM_DB_NAME", "msg")
 PM_USER_DB     = os.getenv("PM_USER_DB", "user")
 
-INACTIVITY_HOURS = int(os.getenv("PM_INACTIVITY_HOURS", "12"))
+INACTIVITY_HOURS = int(os.getenv("PM_INACTIVITY_HOURS", "1"))
 
 
 def _get_conn():
@@ -165,7 +169,10 @@ def _build_plain_messages(conn, thread_id: int, org_ids: set) -> tuple:
 
 def fetch_finished_dialogs(since: Optional[datetime] = None) -> list:
     """
-    Возвращает список Dialog для тредов, где нет активности INACTIVITY_HOURS часов.
+    Возвращает список Dialog для завершённых тредов.
+
+    Завершённый = последнее сообщение > INACTIVITY_HOURS (1ч) назад
+                  И оператор прочитал тред (is_unread = 0 в thread_user).
 
     since: не возвращать диалоги с last_msg_at <= since (для избежания дублей).
            Если None — берём всё за последние 30 дней.
@@ -182,19 +189,34 @@ def fetch_finished_dialogs(since: Optional[datetime] = None) -> list:
 
     try:
         cur = conn.cursor()
-        cur.execute("""
+
+        if not org_ids:
+            logger.warning("[site_pm] Список организаторов пуст — диалоги не будут найдены")
+            return []
+
+        org_list = list(org_ids)
+        org_ph   = ",".join(["%s"] * len(org_list))
+
+        cur.execute(f"""
             SELECT
-                t.id            AS thread_id,
+                t.id              AS thread_id,
                 t.author_user_id,
                 MAX(m.created_at) AS last_msg_at,
-                COUNT(m.id)     AS msg_count
+                COUNT(m.id)       AS msg_count
             FROM thread t
             JOIN message m ON m.thread_id = t.id AND m.is_deleted = 0
+            WHERE EXISTS (
+                SELECT 1 FROM thread_user tu
+                WHERE tu.thread_id = t.id
+                  AND tu.user_id IN ({org_ph})
+                  AND tu.is_unread = 0
+                  AND (tu.is_deleted = 0 OR tu.is_deleted IS NULL)
+            )
             GROUP BY t.id, t.author_user_id
             HAVING last_msg_at <= %s
-               AND last_msg_at > %s
+               AND last_msg_at >  %s
             ORDER BY last_msg_at ASC
-        """, (deadline, since))
+        """, (*org_list, deadline, since))
 
         rows = cur.fetchall()
         logger.info(f"[site_pm] Найдено завершённых тредов: {len(rows)}")
