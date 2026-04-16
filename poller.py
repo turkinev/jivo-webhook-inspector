@@ -128,7 +128,7 @@ SOURCES = {
 }
 
 
-def run_source(source_name: str, dry_run: bool, limit: int):
+def run_source(source_name: str, dry_run: bool, limit: int, days_back: int = 1):
     if source_name not in SOURCES:
         logger.error(f"[poller] Неизвестный источник: {source_name}")
         return
@@ -139,6 +139,13 @@ def run_source(source_name: str, dry_run: bool, limit: int):
 
     ensure_cursor_table()
     since = get_cursor(source_name)
+
+    # Первый запуск (cursor не был установлен) — берём только за последние days_back дней
+    first_run = since.year == 1970
+    if first_run:
+        since = datetime.now() - timedelta(days=days_back)
+        logger.info(f"[{source_name}] Первый запуск — берём за последние {days_back} дн. (с {since:%Y-%m-%d})")
+
     processed_ids = get_processed_ids(source_name)
 
     logger.info(f"[{source_name}] cursor={since} | уже обработано={len(processed_ids)}")
@@ -191,12 +198,14 @@ def main():
                         help=f"источник: {', '.join(SOURCES)} (по умолчанию все)")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--limit", type=int, default=0)
+    parser.add_argument("--days-back", type=int, default=1,
+                        help="при первом запуске — сколько дней истории брать (default: 1)")
     args = parser.parse_args()
 
     sources = [args.source] if args.source else list(SOURCES.keys())
 
     for src in sources:
-        run_source(src, dry_run=args.dry_run, limit=args.limit)
+        run_source(src, dry_run=args.dry_run, limit=args.limit, days_back=args.days_back)
 
 
 if __name__ == "__main__":
