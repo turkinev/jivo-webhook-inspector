@@ -59,13 +59,20 @@ _org_user_ids: Optional[set] = None
 
 
 def _load_org_ids(conn) -> set:
-    """Загружает set user_id всех организаторов из user.user_orgrole."""
+    """Загружает set user_id организаторов: группа 58, исключая группы 4 и 5."""
     global _org_user_ids
     if _org_user_ids is not None:
         return _org_user_ids
     try:
         cur = conn.cursor()
-        cur.execute(f"SELECT DISTINCT user_id FROM {PM_USER_DB}.user_orgrole")
+        cur.execute(f"""
+            SELECT user_id FROM {PM_USER_DB}.user_group
+            WHERE group_id = 58
+              AND user_id NOT IN (
+                  SELECT user_id FROM {PM_USER_DB}.user_group
+                  WHERE group_id IN (4, 5)
+              )
+        """)
         _org_user_ids = {r["user_id"] for r in cur.fetchall()}
         logger.info(f"[site_pm] Загружено {len(_org_user_ids)} организаторов")
     except Exception as e:
