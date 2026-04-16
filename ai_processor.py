@@ -326,8 +326,12 @@ def ch_request(query: str, data: bytes = None) -> str:
     })
     url = f"http://{CH_HOST}:{CH_PORT}/?{params}"
     req = urllib.request.Request(url, data=data, method="POST" if data else "GET")
-    resp = urllib.request.urlopen(req, timeout=15)
-    return resp.read().decode()
+    try:
+        resp = urllib.request.urlopen(req, timeout=15)
+        return resp.read().decode()
+    except urllib.error.HTTPError as e:
+        body = e.read().decode()
+        raise RuntimeError(f"CH {e.code}: {body[:500]}") from None
 
 
 def insert_analysis(chat_id: int, parsed: dict, raw_llm_json: str, source: str = "jivo"):
