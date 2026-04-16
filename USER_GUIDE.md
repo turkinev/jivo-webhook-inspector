@@ -140,17 +140,28 @@ Jivo работает в рабочее время **понедельник–п
 
 Если клиент написал вне рабочего времени — дедлайн переносится на начало следующего рабочего дня (8:05).
 
-### Что фиксируется
+### Что фиксируется в базе данных
 
-По каждому диалогу система записывает:
-- Когда клиент написал первое сообщение
-- Когда оператор ответил первый раз
-- Сколько минут прошло
-- Уложился ли ответ в дедлайн (да / нет)
+По каждому диалогу система записывает строку в таблицу `dialog_sla`:
+
+| Поле | Что означает | Пример |
+|---|---|---|
+| `source` | Источник диалога | `jivo` или `site_pm` |
+| `chat_id` | ID диалога | `1234062` |
+| `client_msg_at` | Когда клиент написал первое сообщение | `2026-04-16 10:15:00` |
+| `operator_msg_at` | Когда оператор ответил первый раз | `2026-04-16 10:18:30` |
+| `sla_deadline` | Дедлайн по правилам SLA | `2026-04-16 18:00:00` |
+| `response_minutes` | Сколько минут до первого ответа | `3` |
+| `sla_violated` | Нарушен ли SLA: 1 = да, 0 = нет | `0` |
+| `is_open` | Тред ещё открыт и без ответа: 1 = да | `0` |
+
+> Если оператор ещё не ответил — поля `operator_msg_at` и `response_minutes` остаются пустыми.
 
 ### Брошенные диалоги
 
-Если оператор не ответил и SLA уже истёк — диалог помечается как **брошенный** (is_open=1). Система проверяет это каждые 30 минут.
+Если оператор не ответил и SLA уже истёк — диалог записывается в ту же таблицу с флагом `is_open = 1` и `sla_violated = 1`.
+
+> ⚙️ **Статус:** данные пишутся в базу. Автоматических уведомлений о нарушениях пока нет — просмотр через SQL-запросы (см. примеры ниже).
 
 ---
 
@@ -215,21 +226,51 @@ GROUP BY operator_name
 ORDER BY avg_score ASC
 ```
 
-### Нарушения SLA за сегодня
+### Сводка по SLA за сегодня
 ```sql
-SELECT source, count() AS violations, avg(response_minutes) AS avg_minutes
+SELECT
+    source,
+    count()                                        AS всего,
+    countIf(sla_violated = 1)                      AS нарушений,
+    countIf(sla_violated = 0)                      AS в_срок,
+    round(avg(response_minutes), 1)                AS среднее_время_мин,
+    countIf(is_open = 1 AND sla_violated = 1)      AS брошенных_без_ответа
 FROM dialog_sla FINAL
 WHERE toDate(client_msg_at) = today()
-  AND sla_violated = 1
 GROUP BY source
 ```
 
-### Брошенные диалоги прямо сейчас
+### Нарушения SLA за сегодня — список диалогов
 ```sql
-SELECT chat_id, client_msg_at, sla_deadline
+SELECT source, chat_id, client_msg_at, sla_deadline, response_minutes
 FROM dialog_sla FINAL
-WHERE is_open = 1 AND sla_violated = 1
+WHERE toDate(client_msg_at) = today()
+  AND sla_violated = 1
+  AND is_open = 0
+ORDER BY client_msg_at ASC
+```
+
+### Брошенные прямо сейчас (нет ответа + SLA истёк)
+```sql
+SELECT source, chat_id, client_msg_at, sla_deadline
+FROM dialog_sla FINAL
+WHERE is_open = 1
+  AND sla_violated = 1
 ORDER BY sla_deadline ASC
+```
+
+### Среднее время ответа по дням за последние 7 дней
+```sql
+SELECT
+    toDate(client_msg_at)      AS день,
+    source,
+    round(avg(response_minutes), 1) AS среднее_мин,
+    countIf(sla_violated = 1)  AS нарушений
+FROM dialog_sla FINAL
+WHERE client_msg_at >= today() - 7
+  AND is_open = 0
+GROUP BY день, source
+ORDER BY день DESC, source
 ```
 
 ---
