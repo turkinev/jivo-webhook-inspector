@@ -1,6 +1,6 @@
 """
 AI-отчёт по диалогам за день или неделю.
-Собирает агрегаты из jivo_chat_analysis, передаёт в AI, отправляет в Telegram.
+Собирает агрегаты из dialog_analysis, передаёт в AI, отправляет в Telegram.
 
 Запуск:
     python3 report.py [--period day|week] [--dry-run]
@@ -131,10 +131,10 @@ def period_filters(period: str):
 def collect_stats(period: str) -> dict:
     cf, ct, pf, pt = period_filters(period)
 
-    # Подзапрос: берём timestamp из raw_jivo_chat (там есть received_at DEFAULT now())
+    # Подзапрос: берём timestamp из raw_dialogs (там есть received_at DEFAULT now())
     ts_subquery = """(
         SELECT chat_id, max(received_at) AS ts
-        FROM raw_jivo_chat
+        FROM raw_dialogs
         WHERE event_name = 'chat_finished'
         GROUP BY chat_id
     )"""
@@ -156,7 +156,7 @@ def collect_stats(period: str) -> dict:
             countIf(toDate(r.ts) >= {cf} AND toDate(r.ts) < {ct} AND ifNull(a.churn_risk_score, 0) >= 0.8) AS cur_high_churn,
             round(avgIf(a.agent_quality_score, toDate(r.ts) >= {cf} AND toDate(r.ts) < {ct}), 1) AS cur_quality_avg,
             round(avgIf(a.agent_quality_score, toDate(r.ts) >= {pf} AND toDate(r.ts) < {pt}), 1) AS prev_quality_avg
-        FROM jivo_chat_analysis a
+        FROM dialog_analysis a
         JOIN {ts_subquery} r ON a.chat_id = r.chat_id
         FORMAT JSONEachRow
     """)
@@ -172,7 +172,7 @@ def collect_stats(period: str) -> dict:
                 if(toDate(r.ts) >= {cf} AND toDate(r.ts) < {ct} AND a.user_problem_summary != '',
                    a.user_problem_summary, '')
             )) AS sample_problems
-        FROM jivo_chat_analysis a
+        FROM dialog_analysis a
         JOIN {ts_subquery} r ON a.chat_id = r.chat_id
         WHERE a.category != 'Не определено'
         GROUP BY a.category
@@ -187,7 +187,7 @@ def collect_stats(period: str) -> dict:
         SELECT
             a.business_signal AS business_signal,
             count() AS cnt
-        FROM jivo_chat_analysis a
+        FROM dialog_analysis a
         JOIN {ts_subquery} r ON a.chat_id = r.chat_id
         WHERE toDate(r.ts) >= {cf}
           AND toDate(r.ts) < {ct}
@@ -200,7 +200,7 @@ def collect_stats(period: str) -> dict:
     # -- Эскалации ------------------------------------------------------
     escalations = ch_query(f"""
         SELECT a.user_problem_summary AS user_problem_summary
-        FROM jivo_chat_analysis a
+        FROM dialog_analysis a
         JOIN {ts_subquery} r ON a.chat_id = r.chat_id
         WHERE toDate(r.ts) >= {cf}
           AND toDate(r.ts) < {ct}
@@ -213,7 +213,7 @@ def collect_stats(period: str) -> dict:
     # -- Высокий churn --------------------------------------------------
     high_churn = ch_query(f"""
         SELECT a.user_problem_summary AS user_problem_summary
-        FROM jivo_chat_analysis a
+        FROM dialog_analysis a
         JOIN {ts_subquery} r ON a.chat_id = r.chat_id
         WHERE toDate(r.ts) >= {cf}
           AND toDate(r.ts) < {ct}
@@ -230,9 +230,9 @@ def collect_stats(period: str) -> dict:
             round(avg(a.agent_quality_score), 1) AS avg_score,
             count() AS cnt,
             groupArray(3)(a.agent_quality_comment) AS comments
-        FROM jivo_chat_analysis a
+        FROM dialog_analysis a
         JOIN {ts_subquery} r ON a.chat_id = r.chat_id
-        JOIN jivo_chat_dialogs d ON a.chat_id = d.chat_id
+        JOIN dialogs d ON a.chat_id = d.chat_id
         WHERE toDate(r.ts) >= {cf}
           AND toDate(r.ts) < {ct}
           AND a.agent_quality_label IN ('Плохо', 'Удовлетворительно')

@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse, Response
 
 from ai_processor import analyze_and_save
 
-app = FastAPI(title="JivoChat Webhook Inspector")
+app = FastAPI(title="Dialog Analytics Webhook")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -45,7 +45,7 @@ def ch_request(query: str, data: bytes = None, timeout: int = 10) -> str:
 
 
 def extract_dialog_row(payload: dict) -> dict:
-    """Разбирает payload chat_finished в плоскую структуру для jivo_chat_dialogs."""
+    """Разбирает payload chat_finished в плоскую структуру для dialogs."""
     visitor  = payload.get("visitor") or {}
     agents   = payload.get("agents") or []
     agent    = agents[0] if agents else {}
@@ -59,6 +59,7 @@ def extract_dialog_row(payload: dict) -> dict:
     agent_texts   = [m["message"] for m in messages if m.get("type") == "agent"]
 
     return {
+        "source":                payload.get("source", "jivo"),
         "event_name":            payload.get("event_name", "chat_finished"),
         "event_timestamp":       payload.get("event_timestamp"),
         "chat_id":               int(payload.get("chat_id", 0)),
@@ -87,22 +88,24 @@ def _insert_sync(payload: dict):
     """Синхронная вставка в CH — запускается в thread pool."""
     chat_id    = int(payload.get("chat_id", 0))
     event_name = payload.get("event_name", "chat_finished")
+    source     = payload.get("source", "jivo")
 
-    # 1. raw_jivo_chat — полный payload как JSON-строка
+    # 1. raw_dialogs — полный payload как JSON-строка
     raw_row = json.dumps({
+        "source":       source,
         "event_name":   event_name,
         "chat_id":      chat_id,
         "payload_json": json.dumps(payload, ensure_ascii=False),
     }, ensure_ascii=False)
     ch_request(
-        "INSERT INTO raw_jivo_chat (event_name, chat_id, payload_json) FORMAT JSONEachRow",
+        "INSERT INTO raw_dialogs (source, event_name, chat_id, payload_json) FORMAT JSONEachRow",
         data=raw_row.encode("utf-8"),
     )
 
-    # 2. jivo_chat_dialogs — структурированные поля
+    # 2. dialogs — структурированные поля
     dialog_row = json.dumps(extract_dialog_row(payload), ensure_ascii=False)
     ch_request(
-        "INSERT INTO jivo_chat_dialogs FORMAT JSONEachRow",
+        "INSERT INTO dialogs FORMAT JSONEachRow",
         data=dialog_row.encode("utf-8"),
     )
 
@@ -129,6 +132,7 @@ async def jivo_webhook(request: Request, background_tasks: BackgroundTasks):
         raise HTTPException(status_code=400, detail="Invalid JSON")
 
     event_type = payload.get("event_name") or payload.get("event", "unknown")
+    payload["source"] = "jivo"
 
     logger.info(f"[JIVO] event={event_type} | chat_id={payload.get('chat_id')}")
 
@@ -146,11 +150,11 @@ async def jivo_webhook(request: Request, background_tasks: BackgroundTasks):
 
 @app.get("/jivo/logs")
 async def list_logs():
-    """Последние 50 диалогов из raw_jivo_chat."""
+    """Последние 50 диалогов из raw_dialogs."""
     def _query():
         return ch_request(
-            "SELECT chat_id, event_name, received_at, payload_json "
-            "FROM raw_jivo_chat "
+            "SELECT source, chat_id, event_name, received_at, payload_json "
+            "FROM raw_dialogs "
             "ORDER BY received_at DESC "
             "LIMIT 50 "
             "FORMAT JSONEachRow"

@@ -330,8 +330,9 @@ def ch_request(query: str, data: bytes = None) -> str:
     return resp.read().decode()
 
 
-def insert_analysis(chat_id: int, parsed: dict, raw_llm_json: str):
+def insert_analysis(chat_id: int, parsed: dict, raw_llm_json: str, source: str = "jivo"):
     row = json.dumps({
+        "source":                source,
         "chat_id":               chat_id,
         "source_type":           parsed["source_type"],
         "contact_reason":        parsed["contact_reason"],
@@ -353,7 +354,7 @@ def insert_analysis(chat_id: int, parsed: dict, raw_llm_json: str):
     }, ensure_ascii=False)
 
     ch_request(
-        "INSERT INTO jivo_chat_analysis FORMAT JSONEachRow",
+        "INSERT INTO dialog_analysis FORMAT JSONEachRow",
         data=row.encode("utf-8"),
     )
 
@@ -365,10 +366,11 @@ def insert_analysis(chat_id: int, parsed: dict, raw_llm_json: str):
 def analyze_and_save(payload: dict):
     """
     Полный цикл: промпт → AI → парсинг → CH.
-    Вызывается из BackgroundTasks FastAPI.
+    Вызывается из BackgroundTasks FastAPI или поллера.
     """
     chat_id = int(payload.get("chat_id") or 0)
-    logger.info(f"[AI] start chat_id={chat_id} model={AI_MODEL}")
+    source  = payload.get("source", "jivo")
+    logger.info(f"[AI] start chat_id={chat_id} source={source} model={AI_MODEL}")
 
     prompt = build_prompt(payload)
     ai_text = call_ai(prompt)
@@ -383,7 +385,7 @@ def analyze_and_save(payload: dict):
         return
 
     try:
-        insert_analysis(chat_id, parsed, ai_text)
+        insert_analysis(chat_id, parsed, ai_text, source=source)
         logger.info(
             f"[AI] saved chat_id={chat_id} "
             f"category={parsed['category']} "
