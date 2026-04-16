@@ -131,6 +131,38 @@ def save_raw(dialog) -> None:
     )
 
 
+def save_dialog(dialog) -> None:
+    """Сохраняет структурированные поля диалога в dialogs."""
+    row = json.dumps({
+        "source":                dialog.source,
+        "event_name":            "chat_finished",
+        "event_timestamp":       dialog.finished_at,
+        "chat_id":               dialog.chat_id,
+        "widget_id":             "",
+        "visitor_id":            int(dialog.visitor_id) if str(dialog.visitor_id).isdigit() else 0,
+        "visitor_name":          dialog.visitor_name,
+        "visitor_chats_count":   dialog.chats_count,
+        "operator_id":           None,
+        "operator_name":         dialog.operator_name,
+        "page_url":              dialog.page_url,
+        "page_title":            "",
+        "geo_country":           "",
+        "geo_region":            "",
+        "geo_city":              "",
+        "chat_messages_json":    "[]",
+        "invite_timestamp":      None,
+        "chat_rate":             None,
+        "plain_messages":        dialog.plain_messages,
+        "full_dialog_text":      dialog.plain_messages,
+        "visitor_messages_text": "",
+        "agent_messages_text":   "",
+    }, ensure_ascii=False)
+    ch_exec(
+        "INSERT INTO dialogs FORMAT JSONEachRow",
+        data=row.encode(),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Реестр источников
 # ---------------------------------------------------------------------------
@@ -183,6 +215,7 @@ def run_source(source_name: str, dry_run: bool, limit: int, days_back: int = 1):
         logger.info(f"[{source_name}] [{i}/{len(new_dialogs)}] dialog_id={dialog.dialog_id}")
         try:
             save_raw(dialog)
+            save_dialog(dialog)
             analyze_and_save(dialog.to_payload())
             ok += 1
             ts = datetime.fromisoformat(dialog.finished_at)
