@@ -53,6 +53,7 @@
 | `poller.py` — поллер ЛС | ✅ Работает | Запускается вручную, cron не настроен |
 | `report.py` — отчёты | ✅ Работает | Запускается вручную, cron не настроен |
 | `sla_checker.py` — SLA | ✅ Работает | Запускается вручную, cron не настроен |
+| `healthcheck.py` — мониторинг | ✅ Работает | Запускается вручную, cron не настроен |
 | Cron-расписание | ❌ Не настроен | Требует `crontab -e` на сервере |
 
 ---
@@ -455,6 +456,9 @@ journalctl -u jivo_inspector -f
 
 # SLA открытых — каждые 30 минут
 */30 * * * * cd /opt/jivo_inspector && venv/bin/python3 sla_checker.py --mode open >> logs/sla.log 2>&1
+
+# Healthcheck — каждый час
+0 * * * * cd /opt/jivo_inspector && venv/bin/python3 healthcheck.py >> logs/healthcheck.log 2>&1
 
 # Ежедневный отчёт — в 9:00
 0 9 * * * cd /opt/jivo_inspector && venv/bin/python3 report.py --period yesterday >> logs/report.log 2>&1
