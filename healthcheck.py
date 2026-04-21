@@ -18,8 +18,9 @@ import os
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Tuple
 
 def load_dotenv(path: str = "/opt/jivo_inspector/.env"):
     env_path = Path(path)
@@ -63,7 +64,7 @@ JIVO_MAX_SILENCE_H  = int(os.getenv("JIVO_MAX_SILENCE_HOURS", "2"))  # макс.
 # Проверки
 # ---------------------------------------------------------------------------
 
-def check_service() -> tuple[bool, str]:
+def check_service() -> Tuple[bool, str]:
     """Проверяет /health endpoint."""
     try:
         req = urllib.request.Request(f"{SERVICE_URL}/health")
@@ -78,7 +79,7 @@ def check_service() -> tuple[bool, str]:
         return False, str(e)
 
 
-def check_jivo_silence() -> tuple[bool, str]:
+def check_jivo_silence() -> Tuple[bool, str]:
     """
     Проверяет что последний chat_finished от Jivo не старше JIVO_MAX_SILENCE_H часов.
     Проверка активна только в рабочее время Пн-Пт 8:00-20:00 (Самара UTC+4).
