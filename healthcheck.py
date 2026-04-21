@@ -111,7 +111,7 @@ def check_jivo_silence() -> Tuple[bool, str]:
             return False, "нет данных о последнем chat_finished"
 
         last_dt = datetime.fromisoformat(last_str)
-        silence = datetime.utcnow() - last_dt
+        silence = datetime.now() - last_dt
         hours   = silence.total_seconds() / 3600
 
         if hours > JIVO_MAX_SILENCE_H:
