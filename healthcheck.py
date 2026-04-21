@@ -173,7 +173,7 @@ def main():
         return
 
     now = datetime.now().strftime("%d.%m.%Y %H:%M")
-    text = f"**⚠️ Dialog Analytics — проблема [{now}]**\n\n" + "\n".join(errors)
+    text = f"@channel\n**⚠️ Dialog Analytics — проблема [{now}]**\n\n" + "\n".join(errors)
     send_mattermost(text, dry_run=args.dry_run)
 
 
