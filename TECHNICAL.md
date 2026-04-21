@@ -458,7 +458,7 @@ journalctl -u jivo_inspector -f
 */30 * * * * cd /opt/jivo_inspector && venv/bin/python3 sla_checker.py --mode open >> logs/sla.log 2>&1
 
 # Healthcheck — каждый час
-0 * * * * cd /opt/jivo_inspector && venv/bin/python3 healthcheck.py >> logs/healthcheck.log 2>&1
+0 * * * * cd /opt/jivo_inspector && venv/bin/python3 healthcheck.py > /dev/null 2>&1
 
 # Ежедневный отчёт — в 9:00
 0 9 * * * cd /opt/jivo_inspector && venv/bin/python3 report.py --period yesterday >> logs/report.log 2>&1
