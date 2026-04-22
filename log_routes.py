@@ -742,6 +742,10 @@ function openSelect(cell) {
 // ── Ресайз столбцов ────────────────────────────────────────────────────────
 const COL_WIDTHS_KEY = 'log_col_widths_v1';
 
+// Дефолтные ширины по порядку столбцов (px)
+// Дата, Время, Оператор, Тип автора, Автор, Логин, Тип, Категория, Подкатегория, Причина обращения, Результат, Комментарий, Канал
+const DEFAULT_COL_WIDTHS = [90, 55, 90, 90, 100, 110, 90, 120, 140, 340, 90, 140, 55];
+
 function initResizableColumns() {
   const ths = [...document.querySelectorAll('thead th')];
   ths.forEach((th, i) => {
@@ -790,7 +794,8 @@ function restoreColWidths() {
     const saved = JSON.parse(localStorage.getItem(COL_WIDTHS_KEY) || '[]');
     const ths = [...document.querySelectorAll('thead th')];
     ths.forEach((th, i) => {
-      if (saved[i]) th.style.width = th.style.minWidth = th.style.maxWidth = saved[i];
+      const w = saved[i] || (DEFAULT_COL_WIDTHS[i] ? DEFAULT_COL_WIDTHS[i] + 'px' : null);
+      if (w) th.style.width = th.style.minWidth = th.style.maxWidth = w;
     });
   } catch (_) {}
 }
