@@ -569,8 +569,8 @@ function render(rows) {
       <td class="col-time">${esc(r.time)}</td>
       <td>${esc(r.operator)}</td>
       <td><div class="select-cell" data-field="source_type" data-value="${esc(r.source_type)}" onclick="openSelect(this)">${esc(r.source_type) || '<span style=color:#bbb>—</span>'}</div></td>
-      <td class="col-author">${esc(r.author)}</td>
-      <td class="col-login">${r.login !== '0' ? esc(r.login) : ''}</td>
+      <td class="col-author" title="${esc(r.author)}">${esc(r.author)}</td>
+      <td class="col-login">${esc(extractLogin(r.author, r.source_type))}</td>
       <td>${esc(r.appeal_type)}</td>
       <td><div class="select-cell" data-field="category"    data-value="${esc(r.category)}"    onclick="openSelect(this)">${esc(r.category)    || '<span style=color:#bbb>—</span>'}</div></td>
       <td><div class="select-cell" data-field="subcategory" data-value="${esc(r.subcategory)}" onclick="openSelect(this)">${esc(r.subcategory) || '<span style=color:#bbb>—</span>'}</div></td>
@@ -601,6 +601,31 @@ async function onBlur(e) {
   el.classList.add('saving');
   await saveRow(row, el);
   el.classList.remove('saving');
+}
+
+// ── Логин из имени автора ──────────────────────────────────────────────────
+function extractLogin(author, sourceType) {
+  if (!author) return '';
+  // ПВЗ и Сотрудник — логин равен автору
+  if (sourceType === 'ПВЗ' || sourceType === 'Сотрудник') return author;
+
+  // 1. После запятой
+  const ci = author.indexOf(',');
+  if (ci !== -1) return author.slice(ci + 1).trim();
+
+  // 2. После слова "лог" (лог, логин и т.п.)
+  const li = author.toLowerCase().indexOf('лог');
+  if (li !== -1) {
+    const after = author.slice(li + 3).replace(/^[\s:]+/, '').trim();
+    if (after) return after;
+  }
+
+  // 3. Последнее слово
+  const words = author.trim().split(/\s+/);
+  if (words.length) return words[words.length - 1];
+
+  // 4. Сам автор
+  return author;
 }
 
 // ── Собрать все редактируемые поля строки ──────────────────────────────────
