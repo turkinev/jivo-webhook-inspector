@@ -112,6 +112,8 @@ def api_log(
             toString(ifNull(d.visitor_id, 0))                                      AS login,
             ifNull(a.contact_reason, '')                                           AS appeal_type,
             ifNull(a.source_type, '')                                              AS source_type,
+            ifNull(a.category, '')                                                 AS category,
+            ifNull(a.subcategory, '')                                              AS subcategory,
             ifNull(a.user_problem_summary, '')                                     AS problem_summary,
             if(e.result IS NOT NULL AND e.result != '',
                e.result,
@@ -375,13 +377,15 @@ tbody td:last-child { border-right: none; }
         <th>Причина обращения</th>
         <th>Тип</th>
         <th>Тип автора</th>
+        <th>Категория</th>
+        <th>Подкатегория</th>
         <th>Результат</th>
         <th>Комментарий</th>
         <th>Канал</th>
       </tr>
     </thead>
     <tbody id="tbody">
-      <tr><td colspan="11" class="no-data"><span class="spinner"></span>Загрузка...</td></tr>
+      <tr><td colspan="13" class="no-data"><span class="spinner"></span>Загрузка...</td></tr>
     </tbody>
   </table>
 </div>
@@ -422,7 +426,7 @@ async function load() {
   });
 
   const tbody = document.getElementById('tbody');
-  tbody.innerHTML = '<tr><td colspan="11" class="no-data"><span class="spinner"></span>Загрузка...</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="13" class="no-data"><span class="spinner"></span>Загрузка...</td></tr>';
   document.getElementById('count').textContent = '';
 
   try {
@@ -439,14 +443,14 @@ async function load() {
     render(data.rows);
     document.getElementById('count').textContent = data.rows.length + ' записей';
   } catch (e) {
-    tbody.innerHTML = `<tr><td colspan="11" class="no-data">Ошибка загрузки: ${e.message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="13" class="no-data">Ошибка загрузки: ${e.message}</td></tr>`;
   }
 }
 
 function render(rows) {
   const tbody = document.getElementById('tbody');
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="11" class="no-data">Нет данных за выбранный период</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="13" class="no-data">Нет данных за выбранный период</td></tr>';
     return;
   }
 
@@ -465,6 +469,8 @@ function render(rows) {
       <td class="col-summary"><div class="summary-text" onclick="this.classList.toggle('expanded')">${esc(r.problem_summary)}</div></td>
       <td>${esc(r.appeal_type)}</td>
       <td>${esc(r.source_type)}</td>
+      <td>${esc(r.category)}</td>
+      <td>${esc(r.subcategory)}</td>
       <td>${resultHtml}</td>
       <td><div class="editable" contenteditable="true" data-field="comment" data-orig="${esc(r.comment)}" data-placeholder="Добавить...">${esc(r.comment)}</div></td>
       <td class="col-channel ${chClass}">${esc(r.channel)}</td>
