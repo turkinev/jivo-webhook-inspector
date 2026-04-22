@@ -307,7 +307,6 @@ tbody td:last-child { border-right: none; }
 .col-author  { max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ── Ресайз столбцов ── */
-thead th { position: relative; }
 .col-resize-handle {
   position: absolute; right: 0; top: 0;
   width: 5px; height: 100%;
