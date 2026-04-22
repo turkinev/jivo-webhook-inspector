@@ -65,7 +65,7 @@ def ch_execute(sql: str, data: bytes = None):
 
 
 def ensure_table():
-    """Создаёт таблицу support_log_edits если её нет."""
+    """Создаёт таблицу support_log_edits если её нет, добавляет новые колонки."""
     ch_execute("""
         CREATE TABLE IF NOT EXISTS support_log_edits (
             chat_id     UInt64,
@@ -77,6 +77,11 @@ def ensure_table():
         ) ENGINE = ReplacingMergeTree(updated_at)
         ORDER BY chat_id
     """)
+    for col in ["source_type", "category", "subcategory"]:
+        try:
+            ch_execute(f"ALTER TABLE support_log_edits ADD COLUMN IF NOT EXISTS {col} String DEFAULT ''")
+        except Exception:
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -111,9 +116,9 @@ def api_log(
             ifNull(d.visitor_name, '')                                             AS author,
             toString(ifNull(d.visitor_id, 0))                                      AS login,
             ifNull(a.contact_reason, '')                                           AS appeal_type,
-            ifNull(a.source_type, '')                                              AS source_type,
-            ifNull(a.category, '')                                                 AS category,
-            ifNull(a.subcategory, '')                                              AS subcategory,
+            if(e.source_type  != '', e.source_type,  ifNull(a.source_type, ''))   AS source_type,
+            if(e.category     != '', e.category,     ifNull(a.category, ''))      AS category,
+            if(e.subcategory  != '', e.subcategory,  ifNull(a.subcategory, ''))   AS subcategory,
             ifNull(a.user_problem_summary, '')                                     AS problem_summary,
             if(e.result IS NOT NULL AND e.result != '',
                e.result,
@@ -154,6 +159,9 @@ class EditPayload(BaseModel):
     responsible: Optional[str] = ""
     result:      Optional[str] = ""
     comment:     Optional[str] = ""
+    source_type: Optional[str] = ""
+    category:    Optional[str] = ""
+    subcategory: Optional[str] = ""
 
 
 @router.post("/api/log/{chat_id}")
@@ -164,9 +172,14 @@ def api_edit(chat_id: int, payload: EditPayload):
         "responsible": payload.responsible or "",
         "result":      payload.result      or "",
         "comment":     payload.comment     or "",
+        "source_type": payload.source_type or "",
+        "category":    payload.category    or "",
+        "subcategory": payload.subcategory or "",
     }, ensure_ascii=False)
     ch_execute(
-        "INSERT INTO support_log_edits (chat_id, organizer, responsible, result, comment) FORMAT JSONEachRow",
+        "INSERT INTO support_log_edits "
+        "(chat_id, organizer, responsible, result, comment, source_type, category, subcategory) "
+        "FORMAT JSONEachRow",
         data=row.encode("utf-8"),
     )
     return JSONResponse({"ok": True})
@@ -226,7 +239,7 @@ html, body {
 .wrap {
   flex: 1;
   overflow: auto;   /* скролл обоих осей внутри контейнера */
-  padding: 10px;
+  padding: 0 0 10px 0;  /* без отступа сверху — заголовки вплотную к тулбару */
 }
 
 table {
@@ -300,6 +313,18 @@ tbody td:last-child { border-right: none; }
 }
 .editable.saving { opacity: .6; }
 .editable.saved  { animation: flash 1s ease forwards; }
+.select-cell {
+  cursor: pointer; padding: 3px 5px; border-radius: 4px;
+  min-width: 60px; min-height: 20px;
+  transition: background .15s;
+}
+.select-cell:hover { background: #f0f7ff; }
+.select-cell.saved { animation: flash 1s ease forwards; }
+.select-cell select {
+  width: 100%; font-size: 12px; border: 1px solid #fbbf24;
+  border-radius: 3px; padding: 2px 4px; background: #fffbea;
+  cursor: pointer;
+}
 @keyframes flash {
   0%   { background: #d1fae5; }
   100% { background: transparent; }
@@ -466,9 +491,9 @@ function render(rows) {
       <td class="col-login">${r.login !== '0' ? esc(r.login) : ''}</td>
       <td class="col-summary"><div class="summary-text" onclick="this.classList.toggle('expanded')">${esc(r.problem_summary)}</div></td>
       <td>${esc(r.appeal_type)}</td>
-      <td>${esc(r.source_type)}</td>
-      <td>${esc(r.category)}</td>
-      <td>${esc(r.subcategory)}</td>
+      <td><div class="select-cell" data-field="source_type" data-value="${esc(r.source_type)}" onclick="openSelect(this)">${esc(r.source_type) || '<span style=color:#bbb>—</span>'}</div></td>
+      <td><div class="select-cell" data-field="category"    data-value="${esc(r.category)}"    onclick="openSelect(this)">${esc(r.category)    || '<span style=color:#bbb>—</span>'}</div></td>
+      <td><div class="select-cell" data-field="subcategory" data-value="${esc(r.subcategory)}" onclick="openSelect(this)">${esc(r.subcategory) || '<span style=color:#bbb>—</span>'}</div></td>
       <td>${resultHtml}</td>
       <td><div class="editable" contenteditable="true" data-field="comment" data-orig="${esc(r.comment)}" data-placeholder="Добавить...">${esc(r.comment)}</div></td>
       <td class="col-channel ${chClass}">${esc(r.channel)}</td>
@@ -489,28 +514,111 @@ async function onBlur(e) {
   if (val === orig) return; // не изменилось
 
   const chatId = row.dataset.id;
-  const fields = {};
-  row.querySelectorAll('.editable').forEach(c => {
-    fields[c.dataset.field] = c.textContent.trim();
-  });
+  const fields = collectFields(row);
 
+  el.dataset.orig = val;
   el.classList.add('saving');
+  await saveRow(row, el);
+  el.classList.remove('saving');
+}
+
+// ── Собрать все редактируемые поля строки ──────────────────────────────────
+function collectFields(row) {
+  const f = {};
+  row.querySelectorAll('.editable').forEach(c => {
+    f[c.dataset.field] = c.textContent.trim();
+  });
+  row.querySelectorAll('.select-cell[data-field]').forEach(c => {
+    f[c.dataset.field] = c.dataset.value || '';
+  });
+  return f;
+}
+
+// ── Сохранить строку ────────────────────────────────────────────────────────
+async function saveRow(row, feedbackEl) {
+  const chatId = row.dataset.id;
+  const fields = collectFields(row);
   try {
     const resp = await fetch('/api/log/' + chatId, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify(fields),
     });
-    if (resp.ok) {
-      el.dataset.orig = val;
-      el.classList.remove('saving');
-      el.classList.add('saved');
-      setTimeout(() => el.classList.remove('saved'), 1200);
+    if (resp.ok && feedbackEl) {
+      feedbackEl.classList.add('saved');
+      setTimeout(() => feedbackEl.classList.remove('saved'), 1200);
     }
   } catch (err) {
-    el.classList.remove('saving');
     console.error('Save error:', err);
   }
+}
+
+// ── Карта категорий / подкатегорий ─────────────────────────────────────────
+const SOURCE_TYPES = ['Клиент', 'ПВЗ', 'Сотрудник'];
+
+const CAT_MAP = {
+  'Заказ и доставка':      ['Статус заказа / задержка','Заказ не найден / потерян','Статус не обновился','Объединение / формирование посылки','Возврат товара (логистика)'],
+  'ПВЗ и выдача':          ['График / адрес ПВЗ','Заказ не выдается','Проблема при приеме товара','Не сканируется / нет стикера','Ручные операции / обход процесса','Стать раздающим'],
+  'Оплата и финансы':      ['Возврат денег','Непонятные списания / долг','Платное хранение','Оргсбор — размер и расчёт'],
+  'Технические проблемы':  ['Ошибка / сбой сайта','Некорректное отображение','Поиск / каталог','Мобильное приложение'],
+  'Аккаунт и профиль':     ['Нет доступа / ошибка входа','Смена телефона / почты','Блокировка / ограничения','Управление рассылками'],
+  'Качество товара':       ['Брак / дефект','Несоответствие описанию или фото','Пересорт / пришло не то','Повреждение при доставке','Нарушения — маркировка, сроки годности'],
+  'Закупки и организаторы':['Вопрос по закупке','Статус закупки / оплаты','Жалоба на организатора'],
+  'Пристрой':              ['Как работает пристрой','Проблемы / передача пристроя'],
+  'Пожелания и инсайты':   ['Запрос нового бренда / поставщика','Запрос открытия ПВЗ в регионе','Запрос новой функции платформы','Коммерческое предложение / партнёрство','Сравнение с конкурентами (WB, Ozon)'],
+  'Благодарность':         ['Благодарность'],
+  'Не определено':         ['Служебное / внутреннее'],
+};
+
+// ── Открыть выпадающий список ──────────────────────────────────────────────
+function openSelect(cell) {
+  if (cell.querySelector('select')) return; // уже открыт
+
+  const field   = cell.dataset.field;
+  const current = cell.dataset.value || '';
+  const row     = cell.closest('tr');
+
+  let options = [];
+  if (field === 'source_type') {
+    options = SOURCE_TYPES;
+  } else if (field === 'category') {
+    options = Object.keys(CAT_MAP);
+  } else if (field === 'subcategory') {
+    const catCell = row.querySelector('[data-field="category"]');
+    const cat = catCell ? catCell.dataset.value : '';
+    options = CAT_MAP[cat] || [];
+  }
+
+  const sel = document.createElement('select');
+  sel.innerHTML = '<option value="">— выбрать —</option>' +
+    options.map(v => `<option value="${esc(v)}"${v === current ? ' selected' : ''}>${esc(v)}</option>`).join('');
+
+  cell.innerHTML = '';
+  cell.appendChild(sel);
+  sel.focus();
+
+  async function apply() {
+    const val = sel.value;
+    cell.dataset.value = val;
+    cell.innerHTML = val
+      ? esc(val)
+      : '<span style="color:#bbb">—</span>';
+    cell.onclick = () => openSelect(cell); // вернуть обработчик
+
+    // Если сменили категорию — сбрасываем подкатегорию
+    if (field === 'category') {
+      const subCell = row.querySelector('[data-field="subcategory"]');
+      if (subCell) {
+        subCell.dataset.value = '';
+        subCell.innerHTML = '<span style="color:#bbb">—</span>';
+      }
+    }
+
+    await saveRow(row, cell);
+  }
+
+  sel.addEventListener('change', apply);
+  sel.addEventListener('blur',   apply);
 }
 
 load();
