@@ -106,21 +106,18 @@ def api_log(
         SELECT
             d.chat_id                                                              AS chat_id,
             toString(toDate(r.ts))                                                 AS date,
-            formatDateTime(r.ts, '%H:%M')                                          AS time,
-            multiIf(d.source='jivo','Чат',d.source='site_pm','ЛС',d.source)       AS channel,
+            substring(toString(r.ts), 12, 5)                                       AS time,
             ifNull(d.operator_name, '')                                            AS operator,
             ifNull(d.visitor_name, '')                                             AS author,
             toString(ifNull(d.visitor_id, 0))                                      AS login,
-            if(a.source_type = 'ПВЗ', ifNull(d.visitor_name, ''), '')             AS pvz,
             ifNull(a.contact_reason, '')                                           AS appeal_type,
+            ifNull(a.source_type, '')                                              AS source_type,
             ifNull(a.user_problem_summary, '')                                     AS problem_summary,
-            toISOWeek(r.ts)                                                        AS week_num,
-            ifNull(e.organizer, '')                                                AS organizer,
-            ifNull(e.responsible, '')                                              AS responsible,
             if(e.result IS NOT NULL AND e.result != '',
                e.result,
                ifNull(a.resolution_status, ''))                                    AS result,
-            ifNull(e.comment, '')                                                  AS comment
+            ifNull(e.comment, '')                                                  AS comment,
+            multiIf(d.source='jivo','Чат',d.source='site_pm','ЛС',d.source)       AS channel
         FROM dialogs d
         JOIN (
             SELECT chat_id, max(received_at) AS ts
@@ -373,22 +370,18 @@ tbody td:last-child { border-right: none; }
         <th>Дата</th>
         <th>Оператор</th>
         <th>Время</th>
-        <th>Канал</th>
-        <th>Вид</th>
         <th>Автор</th>
         <th>Логин</th>
-        <th>ПВЗ</th>
-        <th>Организатор</th>
         <th>Причина обращения</th>
         <th>Тип</th>
-        <th>Ответственный</th>
+        <th>Тип автора</th>
         <th>Результат</th>
-        <th>№ нед</th>
         <th>Комментарий</th>
+        <th>Канал</th>
       </tr>
     </thead>
     <tbody id="tbody">
-      <tr><td colspan="15" class="no-data"><span class="spinner"></span>Загрузка...</td></tr>
+      <tr><td colspan="11" class="no-data"><span class="spinner"></span>Загрузка...</td></tr>
     </tbody>
   </table>
 </div>
@@ -429,7 +422,7 @@ async function load() {
   });
 
   const tbody = document.getElementById('tbody');
-  tbody.innerHTML = '<tr><td colspan="15" class="no-data"><span class="spinner"></span>Загрузка...</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="11" class="no-data"><span class="spinner"></span>Загрузка...</td></tr>';
   document.getElementById('count').textContent = '';
 
   try {
@@ -446,38 +439,35 @@ async function load() {
     render(data.rows);
     document.getElementById('count').textContent = data.rows.length + ' записей';
   } catch (e) {
-    tbody.innerHTML = `<tr><td colspan="15" class="no-data">Ошибка загрузки: ${e.message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="11" class="no-data">Ошибка загрузки: ${e.message}</td></tr>`;
   }
 }
 
 function render(rows) {
   const tbody = document.getElementById('tbody');
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="15" class="no-data">Нет данных за выбранный период</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="11" class="no-data">Нет данных за выбранный период</td></tr>';
     return;
   }
 
   tbody.innerHTML = rows.map(r => {
     const chClass = r.channel === 'Чат' ? 'ch-chat' : 'ch-ls';
     const bc = badgeClass(r.result);
-    const badge = bc ? `<span class="badge ${bc}">${esc(r.result)}</span>` : esc(r.result);
-    // Ответственный как editable с бейджем результата отдельно
+    const resultHtml = bc
+      ? `<span class="badge ${bc}">${esc(r.result)}</span>`
+      : (r.result ? esc(r.result) : '<span style="color:#bbb">—</span>');
     return `<tr data-id="${r.chat_id}">
       <td class="col-date">${esc(r.date)}</td>
       <td>${esc(r.operator)}</td>
       <td class="col-time">${esc(r.time)}</td>
-      <td class="col-channel ${chClass}">${esc(r.channel)}</td>
-      <td>Входящее</td>
       <td>${esc(r.author)}</td>
       <td class="col-login">${r.login !== '0' ? esc(r.login) : ''}</td>
-      <td>${esc(r.pvz)}</td>
-      <td><div class="editable" contenteditable="true" data-field="organizer" data-orig="${esc(r.organizer)}" data-placeholder="—">${esc(r.organizer)}</div></td>
       <td class="col-summary"><div class="summary-text" onclick="this.classList.toggle('expanded')">${esc(r.problem_summary)}</div></td>
       <td>${esc(r.appeal_type)}</td>
-      <td><div class="editable" contenteditable="true" data-field="responsible" data-orig="${esc(r.responsible)}" data-placeholder="—">${esc(r.responsible)}</div></td>
-      <td><div class="editable ${bc}" contenteditable="true" data-field="result" data-orig="${esc(r.result)}" data-placeholder="—">${esc(r.result)}</div></td>
-      <td class="col-week">${r.week_num}</td>
+      <td>${esc(r.source_type)}</td>
+      <td>${resultHtml}</td>
       <td><div class="editable" contenteditable="true" data-field="comment" data-orig="${esc(r.comment)}" data-placeholder="Добавить...">${esc(r.comment)}</div></td>
+      <td class="col-channel ${chClass}">${esc(r.channel)}</td>
     </tr>`;
   }).join('');
 
