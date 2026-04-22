@@ -216,7 +216,7 @@ def collect_stats(period: str) -> dict:
             countIf(toDate(r.ts) >= {cf} AND toDate(r.ts) < {ct}) AS cur_cnt,
             arrayFilter(x -> x != '', groupArray(
                 if(toDate(r.ts) >= {cf} AND toDate(r.ts) < {ct} AND a.user_problem_summary != '',
-                   a.user_problem_summary, '')
+                   concat('#', toString(a.chat_id), ': ', a.user_problem_summary), '')
             )) AS all_problems
         FROM dialog_analysis a
         JOIN {ts_subquery} r ON a.chat_id = r.chat_id
@@ -231,7 +231,7 @@ def collect_stats(period: str) -> dict:
 
     # -- Эскалации ------------------------------------------------------
     escalations = ch_query(f"""
-        SELECT a.user_problem_summary AS user_problem_summary
+        SELECT concat('#', toString(a.chat_id), ': ', a.user_problem_summary) AS problem
         FROM dialog_analysis a
         JOIN {ts_subquery} r ON a.chat_id = r.chat_id
         WHERE toDate(r.ts) >= {cf} AND toDate(r.ts) < {ct}
@@ -241,7 +241,7 @@ def collect_stats(period: str) -> dict:
 
     # -- Высокий churn --------------------------------------------------
     high_churn = ch_query(f"""
-        SELECT a.user_problem_summary AS user_problem_summary
+        SELECT concat('#', toString(a.chat_id), ': ', a.user_problem_summary) AS problem
         FROM dialog_analysis a
         JOIN {ts_subquery} r ON a.chat_id = r.chat_id
         WHERE toDate(r.ts) >= {cf} AND toDate(r.ts) < {ct}
@@ -291,8 +291,8 @@ def collect_stats(period: str) -> dict:
         "high_churn_count":    int(t.get("cur_high_churn", 0)),
         "agent_quality_avg":   float(t.get("cur_quality_avg") or 0),
         "categories":          categories,
-        "escalation_problems": [r["user_problem_summary"] for r in escalations],
-        "high_churn_problems": [r["user_problem_summary"] for r in high_churn],
+        "escalation_problems": [r["problem"] for r in escalations],
+        "high_churn_problems": [r["problem"] for r in high_churn],
         "low_quality_operators": bad_agents,
     }
 
