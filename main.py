@@ -10,14 +10,26 @@ from fastapi import FastAPI, Request, HTTPException, BackgroundTasks
 from fastapi.responses import JSONResponse, Response
 
 from ai_processor import analyze_and_save
-
-app = FastAPI(title="Dialog Analytics Webhook")
+from log_routes import router as log_router, ensure_table
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+app = FastAPI(title="Dialog Analytics Webhook")
+app.include_router(log_router)
+
+
+@app.on_event("startup")
+def on_startup():
+    try:
+        ensure_table()
+        logger.info("[startup] support_log_edits OK")
+    except Exception as e:
+        logger.warning(f"[startup] support_log_edits: {e}")
+
 
 # Пул потоков для синхронных CH-вызовов (не блокируют event loop)
 executor = ThreadPoolExecutor(max_workers=4)
