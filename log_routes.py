@@ -190,11 +190,16 @@ _HTML = """<!DOCTYPE html>
 <title>Журнал обращений</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 13px; background: #f0f2f5; color: #222; }
+html, body {
+  height: 100%; overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 13px; background: #f0f2f5; color: #222;
+  display: flex; flex-direction: column;
+}
 
 /* ── Toolbar ── */
 .toolbar {
-  position: sticky; top: 0; z-index: 20;
+  flex-shrink: 0;
   background: #fff; border-bottom: 1px solid #ddd;
   padding: 8px 14px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
   box-shadow: 0 1px 4px rgba(0,0,0,.08);
@@ -219,7 +224,11 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .count { margin-left: auto; font-size: 12px; color: #888; white-space: nowrap; }
 
 /* ── Table wrapper ── */
-.wrap { overflow-x: auto; padding: 10px; }
+.wrap {
+  flex: 1;
+  overflow: auto;   /* скролл обоих осей внутри контейнера */
+  padding: 10px;
+}
 
 table {
   border-collapse: collapse;
@@ -241,7 +250,7 @@ thead th {
   color: #444;
   white-space: nowrap;
   position: sticky;
-  top: 45px;
+  top: 0;           /* прилипает к верху .wrap, а не вьюпорта */
   z-index: 10;
 }
 thead th:last-child { border-right: none; }
