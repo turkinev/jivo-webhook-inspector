@@ -305,6 +305,18 @@ tbody td:last-child { border-right: none; }
 .col-time    { white-space: nowrap; color: #888; }
 .col-channel { white-space: nowrap; font-weight: 500; }
 .col-author  { max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── Ресайз столбцов ── */
+thead th { position: relative; }
+.col-resize-handle {
+  position: absolute; right: 0; top: 0;
+  width: 5px; height: 100%;
+  cursor: col-resize;
+  user-select: none;
+  z-index: 1;
+}
+.col-resize-handle:hover,
+.col-resize-handle.dragging { background: #1a73e8; }
 .col-summary { max-width: 320px; word-wrap: break-word; line-height: 1.4; }
 .col-login   { color: #888; font-size: 12px; }
 .col-week    { text-align: center; color: #888; font-size: 12px; }
@@ -727,6 +739,63 @@ function openSelect(cell) {
   sel.addEventListener('blur',   apply);
 }
 
+// ── Ресайз столбцов ────────────────────────────────────────────────────────
+const COL_WIDTHS_KEY = 'log_col_widths_v1';
+
+function initResizableColumns() {
+  const ths = [...document.querySelectorAll('thead th')];
+  ths.forEach((th, i) => {
+    const handle = document.createElement('div');
+    handle.className = 'col-resize-handle';
+    th.appendChild(handle);
+
+    let startX, startW;
+
+    handle.addEventListener('mousedown', e => {
+      startX = e.pageX;
+      startW = th.offsetWidth;
+      handle.classList.add('dragging');
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+
+      const onMove = e => {
+        const w = Math.max(30, startW + e.pageX - startX);
+        th.style.width = th.style.minWidth = th.style.maxWidth = w + 'px';
+      };
+      const onUp = () => {
+        handle.classList.remove('dragging');
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        saveColWidths();
+      };
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+      e.preventDefault();
+    });
+  });
+
+  restoreColWidths();
+}
+
+function saveColWidths() {
+  const widths = [...document.querySelectorAll('thead th')]
+    .map(th => th.style.width || '');
+  localStorage.setItem(COL_WIDTHS_KEY, JSON.stringify(widths));
+}
+
+function restoreColWidths() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(COL_WIDTHS_KEY) || '[]');
+    const ths = [...document.querySelectorAll('thead th')];
+    ths.forEach((th, i) => {
+      if (saved[i]) th.style.width = th.style.minWidth = th.style.maxWidth = saved[i];
+    });
+  } catch (_) {}
+}
+
+initResizableColumns();
 load();
 </script>
 </body>
