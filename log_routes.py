@@ -92,23 +92,37 @@ PER_PAGE = 100
 
 @router.get("/api/log")
 def api_log(
-    date_from: str = Query(default=None),
-    date_to:   str = Query(default=None),
-    operator:  str = Query(default=""),
-    channel:   str = Query(default=""),
-    page:      int = Query(default=1, ge=1),
+    date_from:   str = Query(default=None),
+    date_to:     str = Query(default=None),
+    operator:    str = Query(default=""),
+    channel:     str = Query(default=""),
+    stype:       str = Query(default=""),
+    category:    str = Query(default=""),
+    subcategory: str = Query(default=""),
+    result:      str = Query(default=""),
+    page:        int = Query(default=1, ge=1),
 ):
     df = date_from or str(date.today() - timedelta(days=7))
     dt = date_to   or str(date.today())
 
+    def q(s): return s.replace("'", "\\'")
+
     where = f"toDate(r.ts) BETWEEN '{df}' AND '{dt}'"
     if operator:
-        op_esc = operator.replace("'", "\\'")
-        where += f" AND d.operator_name = '{op_esc}'"
+        where += f" AND d.operator_name = '{q(operator)}'"
     if channel == "Чат":
         where += " AND d.source = 'jivo'"
     elif channel == "ЛС":
         where += " AND d.source = 'site_pm'"
+    # Фильтры по вычисляемым полям (с учётом правок из support_log_edits)
+    if stype:
+        where += f" AND if(e.source_type!=''  , e.source_type , ifNull(a.source_type,''))  = '{q(stype)}'"
+    if category:
+        where += f" AND if(e.category!=''     , e.category    , ifNull(a.category,''))     = '{q(category)}'"
+    if subcategory:
+        where += f" AND if(e.subcategory!=''  , e.subcategory , ifNull(a.subcategory,''))  = '{q(subcategory)}'"
+    if result:
+        where += f" AND if(e.result!='' AND e.result IS NOT NULL, e.result, ifNull(a.resolution_status,'')) = '{q(result)}'"
 
     offset = (page - 1) * PER_PAGE
 
@@ -334,7 +348,8 @@ tbody td:last-child { border-right: none; }
   outline: none;
   cursor: text;
   white-space: pre-wrap;
-  word-wrap: break-word;
+  word-break: break-word;
+  overflow-wrap: break-word;
   transition: background .15s, box-shadow .15s;
 }
 .editable:empty::before {
@@ -437,6 +452,35 @@ tbody td:last-child { border-right: none; }
       <option value="ЛС">ЛС (сайт)</option>
     </select>
   </div>
+  <div class="filter-group">
+    <label>Тип автора</label>
+    <select id="filter_stype">
+      <option value="">Все</option>
+      <option value="Клиент">Клиент</option>
+      <option value="ПВЗ">ПВЗ</option>
+      <option value="Сотрудник">Сотрудник</option>
+    </select>
+  </div>
+  <div class="filter-group">
+    <label>Категория</label>
+    <select id="filter_category" onchange="updateSubcatFilter()">
+      <option value="">Все</option>
+    </select>
+  </div>
+  <div class="filter-group">
+    <label>Подкатегория</label>
+    <select id="filter_subcategory"><option value="">Все</option></select>
+  </div>
+  <div class="filter-group">
+    <label>Результат</label>
+    <select id="filter_result">
+      <option value="">Все</option>
+      <option value="Решено">Решено</option>
+      <option value="Не решено">Не решено</option>
+      <option value="Частично">Частично</option>
+      <option value="Эскалация">Эскалация</option>
+    </select>
+  </div>
   <button class="btn" onclick="load()">Применить</button>
   <span class="count" id="count"></span>
 </div>
@@ -497,17 +541,36 @@ function badgeClass(result) {
   return r ? 'badge-other' : '';
 }
 
+function initFilters() {
+  const sel = document.getElementById('filter_category');
+  sel.innerHTML = '<option value="">Все</option>' +
+    Object.keys(CAT_MAP).map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+}
+
+function updateSubcatFilter() {
+  const cat = document.getElementById('filter_category').value;
+  const sel = document.getElementById('filter_subcategory');
+  const cur = sel.value;
+  const subs = CAT_MAP[cat] || [];
+  sel.innerHTML = '<option value="">Все</option>' +
+    subs.map(s => `<option value="${esc(s)}"${s===cur?' selected':''}>${esc(s)}</option>`).join('');
+}
+
 function goPage(p) { currentPage = p; load(false); }
 
 async function load(resetPage = true) {
   if (resetPage) currentPage = 1;
 
   const params = new URLSearchParams({
-    date_from: document.getElementById('date_from').value,
-    date_to:   document.getElementById('date_to').value,
-    operator:  document.getElementById('filter_operator').value,
-    channel:   document.getElementById('filter_channel').value,
-    page:      currentPage,
+    date_from:   document.getElementById('date_from').value,
+    date_to:     document.getElementById('date_to').value,
+    operator:    document.getElementById('filter_operator').value,
+    channel:     document.getElementById('filter_channel').value,
+    stype:       document.getElementById('filter_stype').value,
+    category:    document.getElementById('filter_category').value,
+    subcategory: document.getElementById('filter_subcategory').value,
+    result:      document.getElementById('filter_result').value,
+    page:        currentPage,
   });
 
   const tbody = document.getElementById('tbody');
@@ -799,6 +862,7 @@ function restoreColWidths() {
   } catch (_) {}
 }
 
+initFilters();
 initResizableColumns();
 load();
 </script>
