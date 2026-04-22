@@ -46,6 +46,7 @@ TELEGRAM_BOT_TOKEN  = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID    = os.getenv("TELEGRAM_CHAT_ID", "")
 REPORT_MAX_TOKENS   = int(os.getenv("REPORT_MAX_TOKENS", "4000"))
 MM_REPORT_WEBHOOK   = os.getenv("MM_REPORT_WEBHOOK", "")
+REPORT_AI_MODEL     = os.getenv("REPORT_AI_MODEL", "openai/gpt-5.4")
 
 # ---------------------------------------------------------------------------
 # Промпт для отчёта
@@ -390,7 +391,7 @@ def main():
 
     print(f"Размер промпта: {len(prompt)} символов")
     print("Отправляем в AI...")
-    report_text = call_ai(prompt, max_tokens=REPORT_MAX_TOKENS)
+    report_text = call_ai(prompt, max_tokens=REPORT_MAX_TOKENS, model=REPORT_AI_MODEL)
 
     if not report_text:
         print("[error] AI не ответил")
