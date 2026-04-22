@@ -668,6 +668,10 @@ async function onBlur(e) {
 
   if (val === orig) return; // не изменилось
 
+  // Очищаем <br> которые браузер оставляет при удалении текста,
+  // чтобы CSS :empty::before (плейсхолдер) снова сработал
+  if (val === '') el.innerHTML = '';
+
   const chatId = row.dataset.id;
   const fields = collectFields(row);
 
