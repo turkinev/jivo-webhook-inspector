@@ -58,8 +58,7 @@ REPORT_PROMPT = """\
 Правила:
 - Только факты из данных. Никаких предположений, «вероятно», «возможно».
 - Никакой воды. Каждое предложение = сигнал или цифра.
-- Числа и дельты обязательны: ↑N (+X%) к пред.периоду и ↑/↓ к медиане 30 дней.
-- Аномалию (резкий рост/спад относительно медианы) помечай 🔺 или 🔻 — определяй сам.
+- Сравнение только с медианой за {median_days} дней: ↑/↓ к медиане, аномалию помечай 🔺 или 🔻 — определяй сам.
 - Цитируй формулировки из all_problems дословно, без редактуры.
 
 Отделы и зоны ответственности:
@@ -75,13 +74,13 @@ REPORT_PROMPT = """\
 Структура отчёта (Markdown **жирный**, эмодзи):
 
 **📊 Сводка**
-N диалогов (↑/↓ к пред. периоду | ↑/↓ к медиане {median_days}д)
+N диалогов (↑/↓ к медиане {median_days}д)
 Решено X% | Не решено X% | Эскалация X
-Качество операторов: X/100 (↑/↓ к пред. периоду)
-Негатив: X% (↑/↓ к пред. периоду)
+Качество операторов: X/100
+Негатив: X%
 
 **📂 Все категории** (в порядке убывания, включая «Не определено»):
-Формат каждой строки: Название — N (↑/↓ к пред. | ↑/↓ к медиане) [🔺 если аномалия]
+Формат каждой строки: Название — N (↑/↓ к медиане) [🔺 если аномалия]
 
 **🏢 По отделам** (только у кого есть обращения, в порядке убывания):
 Для каждого отдела:
@@ -137,25 +136,20 @@ def ch_query(sql: str) -> list:
 # ---------------------------------------------------------------------------
 
 def period_filters(period: str):
-    """Возвращает SQL-выражения границ текущего и предыдущего периода."""
+    """Возвращает SQL-выражения границ периода (от, до)."""
     if period == "week":
-        return (
-            "toMonday(today())",
-            "today() + 1",
-            "toMonday(today()) - 7",
-            "toMonday(today())",
-        )
+        return "toMonday(today())", "today() + 1"
     if period == "yesterday":
-        return "today() - 1", "today()", "today() - 2", "today() - 1"
+        return "today() - 1", "today()"
     # day = сегодня
-    return "today()", "today() + 1", "today() - 1", "today()"
+    return "today()", "today() + 1"
 
 
 MEDIAN_DAYS = int(os.getenv("REPORT_MEDIAN_DAYS", "30"))
 
 
 def collect_stats(period: str) -> dict:
-    cf, ct, pf, pt = period_filters(period)
+    cf, ct = period_filters(period)
 
     ts_subquery = """(
         SELECT chat_id, max(received_at) AS ts
@@ -168,9 +162,7 @@ def collect_stats(period: str) -> dict:
     rows = ch_query(f"""
         SELECT
             countIf(toDate(r.ts) >= {cf} AND toDate(r.ts) < {ct})  AS cur_total,
-            countIf(toDate(r.ts) >= {pf} AND toDate(r.ts) < {pt})  AS prev_total,
             countIf(toDate(r.ts) >= {cf} AND toDate(r.ts) < {ct} AND a.user_emotion = 'Негатив')     AS cur_neg,
-            countIf(toDate(r.ts) >= {pf} AND toDate(r.ts) < {pt} AND a.user_emotion = 'Негатив')     AS prev_neg,
             countIf(toDate(r.ts) >= {cf} AND toDate(r.ts) < {ct} AND a.user_emotion = 'Нейтральный') AS cur_neu,
             countIf(toDate(r.ts) >= {cf} AND toDate(r.ts) < {ct} AND a.user_emotion = 'Позитив')     AS cur_pos,
             countIf(toDate(r.ts) >= {cf} AND toDate(r.ts) < {ct} AND a.resolution_status = 'Решено')    AS cur_resolved,
@@ -179,8 +171,7 @@ def collect_stats(period: str) -> dict:
             countIf(toDate(r.ts) >= {cf} AND toDate(r.ts) < {ct} AND a.resolution_status = 'Эскалация') AS cur_escalation,
             countIf(toDate(r.ts) >= {cf} AND toDate(r.ts) < {ct} AND a.needs_escalation = 1)            AS cur_needs_esc,
             countIf(toDate(r.ts) >= {cf} AND toDate(r.ts) < {ct} AND ifNull(a.churn_risk_score, 0) >= 0.8) AS cur_high_churn,
-            round(avgIf(a.agent_quality_score, toDate(r.ts) >= {cf} AND toDate(r.ts) < {ct}), 1) AS cur_quality_avg,
-            round(avgIf(a.agent_quality_score, toDate(r.ts) >= {pf} AND toDate(r.ts) < {pt}), 1) AS prev_quality_avg
+            round(avgIf(a.agent_quality_score, toDate(r.ts) >= {cf} AND toDate(r.ts) < {ct}), 1) AS cur_quality_avg
         FROM dialog_analysis a
         JOIN {ts_subquery} r ON a.chat_id = r.chat_id
         FORMAT JSONEachRow
@@ -223,7 +214,6 @@ def collect_stats(period: str) -> dict:
         SELECT
             a.category AS category,
             countIf(toDate(r.ts) >= {cf} AND toDate(r.ts) < {ct}) AS cur_cnt,
-            countIf(toDate(r.ts) >= {pf} AND toDate(r.ts) < {pt}) AS prev_cnt,
             arrayFilter(x -> x != '', groupArray(
                 if(toDate(r.ts) >= {cf} AND toDate(r.ts) < {ct} AND a.user_problem_summary != '',
                    a.user_problem_summary, '')
@@ -285,14 +275,12 @@ def collect_stats(period: str) -> dict:
         "date":                str(date.today()),
         "median_days":         MEDIAN_DAYS,
         "total":               int(t.get("cur_total", 0)),
-        "prev_total":          int(t.get("prev_total", 0)),
         "median_total":        median_total,
         "emotions": {
             "Негатив":     int(t.get("cur_neg", 0)),
             "Нейтральный": int(t.get("cur_neu", 0)),
             "Позитив":     int(t.get("cur_pos", 0)),
         },
-        "prev_neg":            int(t.get("prev_neg", 0)),
         "resolution": {
             "Решено":    int(t.get("cur_resolved", 0)),
             "Не решено": int(t.get("cur_unresolved", 0)),
@@ -302,7 +290,6 @@ def collect_stats(period: str) -> dict:
         "needs_escalation":    int(t.get("cur_needs_esc", 0)),
         "high_churn_count":    int(t.get("cur_high_churn", 0)),
         "agent_quality_avg":   float(t.get("cur_quality_avg") or 0),
-        "prev_agent_quality_avg": float(t.get("prev_quality_avg") or 0),
         "categories":          categories,
         "escalation_problems": [r["user_problem_summary"] for r in escalations],
         "high_churn_problems": [r["user_problem_summary"] for r in high_churn],
