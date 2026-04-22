@@ -358,6 +358,7 @@ tbody td:last-child { border-right: none; }
   font-style: italic;
   pointer-events: none;
 }
+.editable:empty { cursor: pointer; }
 .editable:focus {
   background: #fffbea;
   box-shadow: 0 0 0 2px #f59e0b55;
