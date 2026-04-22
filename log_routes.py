@@ -88,12 +88,15 @@ def ensure_table():
 # API
 # ---------------------------------------------------------------------------
 
+PER_PAGE = 100
+
 @router.get("/api/log")
 def api_log(
     date_from: str = Query(default=None),
     date_to:   str = Query(default=None),
     operator:  str = Query(default=""),
     channel:   str = Query(default=""),
+    page:      int = Query(default=1, ge=1),
 ):
     df = date_from or str(date.today() - timedelta(days=7))
     dt = date_to   or str(date.today())
@@ -106,6 +109,23 @@ def api_log(
         where += " AND d.source = 'jivo'"
     elif channel == "ЛС":
         where += " AND d.source = 'site_pm'"
+
+    offset = (page - 1) * PER_PAGE
+
+    # Общее количество для пагинации
+    total_rows = ch_query(f"""
+        SELECT count() AS total
+        FROM dialogs d
+        JOIN (
+            SELECT chat_id, max(received_at) AS ts
+            FROM raw_dialogs
+            WHERE event_name = 'chat_finished'
+            GROUP BY chat_id
+        ) r ON d.chat_id = r.chat_id
+        WHERE {where}
+        FORMAT JSONEachRow
+    """)
+    total = int((total_rows[0] if total_rows else {}).get("total", 0))
 
     rows = ch_query(f"""
         SELECT
@@ -136,7 +156,7 @@ def api_log(
         LEFT JOIN (SELECT * FROM support_log_edits FINAL) e ON d.chat_id = e.chat_id
         WHERE {where}
         ORDER BY r.ts DESC
-        LIMIT 1000
+        LIMIT {PER_PAGE} OFFSET {offset}
         FORMAT JSONEachRow
     """)
 
@@ -151,6 +171,10 @@ def api_log(
     return JSONResponse({
         "rows":      rows,
         "operators": [r["operator_name"] for r in operators],
+        "total":     total,
+        "page":      page,
+        "per_page":  PER_PAGE,
+        "pages":     max(1, -(-total // PER_PAGE)),  # ceil division
     })
 
 
@@ -357,6 +381,23 @@ tbody td:last-child { border-right: none; }
 .no-data { text-align: center; padding: 60px 20px; color: #aaa; font-size: 14px; }
 .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #ddd; border-top-color: #1a73e8; border-radius: 50%; animation: spin .6s linear infinite; vertical-align: middle; margin-right: 6px; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Пагинация ── */
+.pagination {
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center; gap: 4px;
+  padding: 8px; background: #fff; border-top: 1px solid #e8e8e8;
+}
+.pg-btn {
+  min-width: 32px; height: 28px; padding: 0 8px;
+  border: 1px solid #ddd; border-radius: 4px; background: #fff;
+  font-size: 12px; cursor: pointer; color: #333;
+  display: flex; align-items: center; justify-content: center;
+}
+.pg-btn:hover:not(:disabled) { background: #f0f7ff; border-color: #1a73e8; color: #1a73e8; }
+.pg-btn.active { background: #1a73e8; color: #fff; border-color: #1a73e8; font-weight: 600; }
+.pg-btn:disabled { opacity: .4; cursor: default; }
+.pg-info { font-size: 12px; color: #888; padding: 0 8px; }
 </style>
 </head>
 <body>
@@ -413,12 +454,16 @@ tbody td:last-child { border-right: none; }
   </table>
 </div>
 
+<div class="pagination" id="pagination"></div>
+
 <script>
 // Defaults: last 7 days
 const today = new Date();
 const week  = new Date(today); week.setDate(today.getDate() - 7);
 document.getElementById('date_from').value = fmt(week);
 document.getElementById('date_to').value   = fmt(today);
+
+let currentPage = 1;
 
 function fmt(d) {
   return d.toISOString().split('T')[0];
@@ -440,34 +485,69 @@ function badgeClass(result) {
   return r ? 'badge-other' : '';
 }
 
-async function load() {
+function goPage(p) { currentPage = p; load(false); }
+
+async function load(resetPage = true) {
+  if (resetPage) currentPage = 1;
+
   const params = new URLSearchParams({
     date_from: document.getElementById('date_from').value,
     date_to:   document.getElementById('date_to').value,
     operator:  document.getElementById('filter_operator').value,
     channel:   document.getElementById('filter_channel').value,
+    page:      currentPage,
   });
 
   const tbody = document.getElementById('tbody');
   tbody.innerHTML = '<tr><td colspan="13" class="no-data"><span class="spinner"></span>Загрузка...</td></tr>';
   document.getElementById('count').textContent = '';
+  document.getElementById('pagination').innerHTML = '';
 
   try {
     const resp = await fetch('/api/log?' + params);
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const data = await resp.json();
 
-    // Обновляем список операторов
-    const sel = document.getElementById('filter_operator');
-    const cur = sel.value;
-    sel.innerHTML = '<option value="">Все</option>' +
-      data.operators.map(o => `<option value="${esc(o)}"${o===cur?' selected':''}>${esc(o)}</option>`).join('');
+    // Обновляем список операторов (только при первой загрузке / сбросе)
+    if (resetPage) {
+      const sel = document.getElementById('filter_operator');
+      const cur = sel.value;
+      sel.innerHTML = '<option value="">Все</option>' +
+        data.operators.map(o => `<option value="${esc(o)}"${o===cur?' selected':''}>${esc(o)}</option>`).join('');
+    }
 
     render(data.rows);
-    document.getElementById('count').textContent = data.rows.length + ' записей';
+    renderPagination(data.page, data.pages, data.total);
+    document.getElementById('count').textContent =
+      `${data.total} записей, стр. ${data.page} из ${data.pages}`;
   } catch (e) {
     tbody.innerHTML = `<tr><td colspan="13" class="no-data">Ошибка загрузки: ${e.message}</td></tr>`;
   }
+}
+
+function renderPagination(page, pages, total) {
+  const el = document.getElementById('pagination');
+  if (pages <= 1) { el.innerHTML = ''; return; }
+
+  const btns = [];
+
+  // Кнопка «Назад»
+  btns.push(`<button class="pg-btn" onclick="goPage(${page-1})" ${page===1?'disabled':''}>‹</button>`);
+
+  // Номера страниц (окно ±2 от текущей)
+  const range = new Set([1, pages]);
+  for (let i = Math.max(1, page-2); i <= Math.min(pages, page+2); i++) range.add(i);
+  let prev = 0;
+  for (const p of [...range].sort((a,b)=>a-b)) {
+    if (prev && p - prev > 1) btns.push(`<span class="pg-info">…</span>`);
+    btns.push(`<button class="pg-btn${p===page?' active':''}" onclick="goPage(${p})">${p}</button>`);
+    prev = p;
+  }
+
+  // Кнопка «Вперёд»
+  btns.push(`<button class="pg-btn" onclick="goPage(${page+1})" ${page===pages?'disabled':''}>›</button>`);
+
+  el.innerHTML = btns.join('');
 }
 
 function render(rows) {
