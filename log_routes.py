@@ -304,6 +304,7 @@ tbody td:last-child { border-right: none; }
 .col-date    { white-space: nowrap; }
 .col-time    { white-space: nowrap; color: #888; }
 .col-channel { white-space: nowrap; font-weight: 500; }
+.col-author  { max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .col-summary { max-width: 320px; word-wrap: break-word; line-height: 1.4; }
 .col-login   { color: #888; font-size: 12px; }
 .col-week    { text-align: center; color: #888; font-size: 12px; }
@@ -434,15 +435,15 @@ tbody td:last-child { border-right: none; }
     <thead>
       <tr>
         <th>Дата</th>
-        <th>Оператор</th>
         <th>Время</th>
+        <th>Оператор</th>
+        <th>Тип автора</th>
         <th>Автор</th>
         <th>Логин</th>
-        <th>Причина обращения</th>
         <th>Тип</th>
-        <th>Тип автора</th>
         <th>Категория</th>
         <th>Подкатегория</th>
+        <th>Причина обращения</th>
         <th>Результат</th>
         <th>Комментарий</th>
         <th>Канал</th>
@@ -565,15 +566,15 @@ function render(rows) {
       : (r.result ? esc(r.result) : '<span style="color:#bbb">—</span>');
     return `<tr data-id="${r.chat_id}">
       <td class="col-date">${esc(r.date)}</td>
-      <td>${esc(r.operator)}</td>
       <td class="col-time">${esc(r.time)}</td>
-      <td>${esc(r.author)}</td>
-      <td class="col-login">${r.login !== '0' ? esc(r.login) : ''}</td>
-      <td class="col-summary"><div class="summary-text" onclick="this.classList.toggle('expanded')">${esc(r.problem_summary)}</div></td>
-      <td>${esc(r.appeal_type)}</td>
+      <td>${esc(r.operator)}</td>
       <td><div class="select-cell" data-field="source_type" data-value="${esc(r.source_type)}" onclick="openSelect(this)">${esc(r.source_type) || '<span style=color:#bbb>—</span>'}</div></td>
+      <td class="col-author">${esc(r.author)}</td>
+      <td class="col-login">${r.login !== '0' ? esc(r.login) : ''}</td>
+      <td>${esc(r.appeal_type)}</td>
       <td><div class="select-cell" data-field="category"    data-value="${esc(r.category)}"    onclick="openSelect(this)">${esc(r.category)    || '<span style=color:#bbb>—</span>'}</div></td>
       <td><div class="select-cell" data-field="subcategory" data-value="${esc(r.subcategory)}" onclick="openSelect(this)">${esc(r.subcategory) || '<span style=color:#bbb>—</span>'}</div></td>
+      <td class="col-summary"><div class="summary-text" onclick="this.classList.toggle('expanded')">${esc(r.problem_summary)}</div></td>
       <td>${resultHtml}</td>
       <td><div class="editable" contenteditable="true" data-field="comment" data-orig="${esc(r.comment)}" data-placeholder="Добавить...">${esc(r.comment)}</div></td>
       <td class="col-channel ${chClass}">${esc(r.channel)}</td>
