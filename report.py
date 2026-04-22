@@ -363,7 +363,7 @@ def main():
 
     print(f"Собираем статистику [{args.period}]...")
     stats = collect_stats(args.period)
-    print(f"Диалогов: {stats['total']} (предыдущий период: {stats['prev_total']})")
+    print(f"Диалогов: {stats['total']} (медиана {stats['median_days']}д: {stats['median_total']})")
 
     if stats["total"] == 0:
         print("Нет данных за период. Отчёт не формируется.")
