@@ -52,30 +52,51 @@ MM_REPORT_WEBHOOK   = os.getenv("MM_REPORT_WEBHOOK", "")
 # ---------------------------------------------------------------------------
 
 REPORT_PROMPT = """\
-Ты — аналитик поддержки. Сформируй краткий отчёт строго на основе переданных данных.
+Ты — аналитик поддержки. Сформируй отчёт строго на основе переданных данных.
 
 Правила:
-- Только факты из данных. Никаких предположений, домыслов, «вероятно», «возможно».
-- Если данных недостаточно для вывода — напиши «недостаточно данных».
-- Никакой воды и общих фраз. Каждое предложение = сигнал или действие.
-- Числа и дельты обязательны: ↑N (+X%) или ↓N (-X%) к предыдущему периоду.
-- Цитируй только реальные формулировки из sample_problems — не перефразируй.
+- Только факты из данных. Никаких предположений, «вероятно», «возможно».
+- Никакой воды. Каждое предложение = сигнал или цифра.
+- Числа и дельты обязательны: ↑N (+X%) к пред.периоду и ↑/↓ к медиане 30 дней.
+- Аномалию (резкий рост/спад относительно медианы) помечай 🔺 или 🔻 — определяй сам.
+- Цитируй формулировки из all_problems дословно, без редактуры.
 
-Структура (Telegram Markdown, *жирный*, эмодзи):
+Отделы и зоны ответственности:
+- Логистика: ПВЗ, движение товара, приём от поставщика/ТК, доставка, задержки, пересорты при сортировке и доставке, бой, возвраты, пристрой
+- IT: технические ошибки, сбои сайта
+- Модераторы: качество работы организаторов, качество товара, конфликты между участниками, правила сайта
+- Служба поддержки: качество коммуникаций, удовлетворённость пользователей
+- Продукт: удобство сайта, дизайн, UX, пользовательский путь, запросы на новые функции
+- Категорийный отдел: ассортимент, поставщики, бренды, категории товаров
+- Маркетинг: рассылки, уведомления, рекламные активности
+- Не определено: всё остальное
 
-*📊 Итог* — 1 строка: N диалогов, качество операторов X, решено X%
+Структура отчёта (Markdown **жирный**, эмодзи):
 
-*🔴 Топ проблем* — только категории с наибольшим объёмом или резким ростом.
-Формат: «Название — N обращений (↑X к прошлому периоду)»
-Под каждой — 2-3 дословные цитаты из sample_problems без редактуры.
+**📊 Сводка**
+N диалогов (↑/↓ к пред. периоду | ↑/↓ к медиане {median_days}д)
+Решено X% | Не решено X% | Эскалация X
+Качество операторов: X/100 (↑/↓ к пред. периоду)
+Негатив: X% (↑/↓ к пред. периоду)
 
-*⚠️ Требуют реакции* — только если есть:
-- эскалации: дословно процитируй каждую
-- churn ≥ 0.8: дословно процитируй каждую
-- agent_quality_label = Плохо: имя оператора + кол-во диалогов
+**📂 Все категории** (в порядке убывания, включая «Не определено»):
+Формат каждой строки: Название — N (↑/↓ к пред. | ↑/↓ к медиане) [🔺 если аномалия]
 
-*💡 Сигналы* — паттерны, которые повторяются в нескольких обращениях и требуют системного решения.
-Только если паттерн виден в данных. Формат: «[проблема] — встречается N раз»
+**🏢 По отделам** (только у кого есть обращения, в порядке убывания):
+Для каждого отдела:
+  **Название отдела — N обращений**
+  Ключевые сигналы: 1-2 предложения по сути проблем
+  Все обращения:
+  • [дословно из all_problems]
+  • ...
+
+**⚠️ Требуют реакции** (только если есть):
+- Эскалации: процитируй каждую
+- Риск оттока ≥ 0.8: процитируй каждую
+- Операторы с низкой оценкой: имя + кол-во диалогов + комментарий
+
+**💡 Системные сигналы**
+Паттерны повторяющиеся в 3+ обращениях. Формат: «[проблема] — N раз → отдел»
 
 Данные:
 {stats_json}
@@ -129,10 +150,12 @@ def period_filters(period: str):
     return "today()", "today() + 1", "today() - 1", "today()"
 
 
+MEDIAN_DAYS = int(os.getenv("REPORT_MEDIAN_DAYS", "30"))
+
+
 def collect_stats(period: str) -> dict:
     cf, ct, pf, pt = period_filters(period)
 
-    # Подзапрос: берём timestamp из raw_dialogs (там есть received_at DEFAULT now())
     ts_subquery = """(
         SELECT chat_id, max(received_at) AS ts
         FROM raw_dialogs
@@ -163,51 +186,65 @@ def collect_stats(period: str) -> dict:
     """)
     t = rows[0] if rows else {}
 
-    # -- Топ категорий с примерами проблем ------------------------------
+    # -- Медиана общего объёма за N дней --------------------------------
+    median_rows = ch_query(f"""
+        SELECT round(avg(daily_cnt), 1) AS median_total
+        FROM (
+            SELECT toDate(r.ts) AS day, count() AS daily_cnt
+            FROM dialog_analysis a
+            JOIN {ts_subquery} r ON a.chat_id = r.chat_id
+            WHERE toDate(r.ts) >= today() - {MEDIAN_DAYS}
+              AND toDate(r.ts) < {cf}
+            GROUP BY day
+        )
+        FORMAT JSONEachRow
+    """)
+    median_total = float((median_rows[0] if median_rows else {}).get("median_total") or 0)
+
+    # -- Медиана по категориям за N дней --------------------------------
+    median_cat_rows = ch_query(f"""
+        SELECT category, round(avg(daily_cnt), 1) AS median_daily
+        FROM (
+            SELECT toDate(r.ts) AS day, a.category, count() AS daily_cnt
+            FROM dialog_analysis a
+            JOIN {ts_subquery} r ON a.chat_id = r.chat_id
+            WHERE toDate(r.ts) >= today() - {MEDIAN_DAYS}
+              AND toDate(r.ts) < {cf}
+            GROUP BY day, a.category
+        )
+        GROUP BY category
+        FORMAT JSONEachRow
+    """)
+    median_by_cat = {r["category"]: float(r["median_daily"]) for r in median_cat_rows}
+
+    # -- Все категории с полным списком проблем -------------------------
     categories = ch_query(f"""
         SELECT
             a.category AS category,
             countIf(toDate(r.ts) >= {cf} AND toDate(r.ts) < {ct}) AS cur_cnt,
             countIf(toDate(r.ts) >= {pf} AND toDate(r.ts) < {pt}) AS prev_cnt,
-            arrayFilter(x -> x != '', groupArray(5)(
+            arrayFilter(x -> x != '', groupArray(
                 if(toDate(r.ts) >= {cf} AND toDate(r.ts) < {ct} AND a.user_problem_summary != '',
                    a.user_problem_summary, '')
-            )) AS sample_problems
+            )) AS all_problems
         FROM dialog_analysis a
         JOIN {ts_subquery} r ON a.chat_id = r.chat_id
-        WHERE a.category != 'Не определено'
         GROUP BY a.category
         HAVING cur_cnt > 0
         ORDER BY cur_cnt DESC
-        LIMIT 8
         FORMAT JSONEachRow
     """)
-
-    # -- Бизнес-сигналы -------------------------------------------------
-    signals = ch_query(f"""
-        SELECT
-            a.business_signal AS business_signal,
-            count() AS cnt
-        FROM dialog_analysis a
-        JOIN {ts_subquery} r ON a.chat_id = r.chat_id
-        WHERE toDate(r.ts) >= {cf}
-          AND toDate(r.ts) < {ct}
-          AND a.business_signal != 'Нет сигнала'
-        GROUP BY a.business_signal
-        ORDER BY cnt DESC
-        FORMAT JSONEachRow
-    """)
+    # Добавляем медиану к каждой категории
+    for cat in categories:
+        cat["median_daily"] = median_by_cat.get(cat["category"], 0)
 
     # -- Эскалации ------------------------------------------------------
     escalations = ch_query(f"""
         SELECT a.user_problem_summary AS user_problem_summary
         FROM dialog_analysis a
         JOIN {ts_subquery} r ON a.chat_id = r.chat_id
-        WHERE toDate(r.ts) >= {cf}
-          AND toDate(r.ts) < {ct}
-          AND a.needs_escalation = 1
-          AND a.user_problem_summary != ''
-        LIMIT 10
+        WHERE toDate(r.ts) >= {cf} AND toDate(r.ts) < {ct}
+          AND a.needs_escalation = 1 AND a.user_problem_summary != ''
         FORMAT JSONEachRow
     """)
 
@@ -216,11 +253,9 @@ def collect_stats(period: str) -> dict:
         SELECT a.user_problem_summary AS user_problem_summary
         FROM dialog_analysis a
         JOIN {ts_subquery} r ON a.chat_id = r.chat_id
-        WHERE toDate(r.ts) >= {cf}
-          AND toDate(r.ts) < {ct}
+        WHERE toDate(r.ts) >= {cf} AND toDate(r.ts) < {ct}
           AND ifNull(a.churn_risk_score, 0) >= 0.8
           AND a.user_problem_summary != ''
-        LIMIT 10
         FORMAT JSONEachRow
     """)
 
@@ -234,8 +269,7 @@ def collect_stats(period: str) -> dict:
         FROM dialog_analysis a
         JOIN {ts_subquery} r ON a.chat_id = r.chat_id
         JOIN dialogs d ON a.chat_id = d.chat_id
-        WHERE toDate(r.ts) >= {cf}
-          AND toDate(r.ts) < {ct}
+        WHERE toDate(r.ts) >= {cf} AND toDate(r.ts) < {ct}
           AND a.agent_quality_label IN ('Плохо', 'Удовлетворительно')
           AND d.operator_name != ''
         GROUP BY d.operator_name
@@ -248,8 +282,10 @@ def collect_stats(period: str) -> dict:
     return {
         "period":              period,
         "date":                str(date.today()),
+        "median_days":         MEDIAN_DAYS,
         "total":               int(t.get("cur_total", 0)),
         "prev_total":          int(t.get("prev_total", 0)),
+        "median_total":        median_total,
         "emotions": {
             "Негатив":     int(t.get("cur_neg", 0)),
             "Нейтральный": int(t.get("cur_neu", 0)),
@@ -267,7 +303,6 @@ def collect_stats(period: str) -> dict:
         "agent_quality_avg":   float(t.get("cur_quality_avg") or 0),
         "prev_agent_quality_avg": float(t.get("prev_quality_avg") or 0),
         "categories":          categories,
-        "business_signals":    signals,
         "escalation_problems": [r["user_problem_summary"] for r in escalations],
         "high_churn_problems": [r["user_problem_summary"] for r in high_churn],
         "low_quality_operators": bad_agents,
@@ -311,8 +346,8 @@ def send_mattermost(text: str):
     if not MM_REPORT_WEBHOOK:
         print("[warn] MM_REPORT_WEBHOOK не задан в .env")
         return
-    # Mattermost: *text* = курсив, **text** = жирный — конвертируем из Telegram-формата
-    mm_text = text.replace("*", "**")
+    # AI уже генерирует **жирный** (стандартный Markdown), Mattermost понимает его нативно
+    mm_text = text
     body = json.dumps({"text": mm_text}, ensure_ascii=False).encode("utf-8")
     req = urllib.request.Request(
         MM_REPORT_WEBHOOK,
@@ -347,7 +382,7 @@ def main():
         return
 
     stats_json = json.dumps(stats, ensure_ascii=False, indent=2)
-    prompt = REPORT_PROMPT.format(stats_json=stats_json)
+    prompt = REPORT_PROMPT.format(stats_json=stats_json, median_days=MEDIAN_DAYS)
 
     if args.dry_run:
         print("\n=== ПРОМПТ ДЛЯ AI ===")
