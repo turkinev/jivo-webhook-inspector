@@ -235,13 +235,17 @@ def build_prompt(payload: dict) -> str:
 # AI call
 # ---------------------------------------------------------------------------
 
-def call_ai(prompt: str, max_tokens: int = None) -> Optional[str]:
+def call_ai(prompt: str, max_tokens: int = None, timeout: int = None) -> Optional[str]:
     """Вызывает AI через прокси, возвращает текст ответа или None при ошибке."""
+    _max_tokens = max_tokens if max_tokens is not None else AI_MAX_TOKENS
+    # Таймаут: если не задан явно — 60с для коротких ответов, 180с для длинных (>2000 токенов)
+    _timeout = timeout if timeout is not None else (180 if _max_tokens > 2000 else 60)
+
     body = json.dumps({
         "model":       AI_MODEL,
         "messages":    [{"role": "user", "content": prompt}],
         "temperature": AI_TEMPERATURE,
-        "max_tokens":  max_tokens if max_tokens is not None else AI_MAX_TOKENS,
+        "max_tokens":  _max_tokens,
         "stream":      False,
     }, ensure_ascii=False).encode("utf-8")
 
@@ -258,7 +262,7 @@ def call_ai(prompt: str, max_tokens: int = None) -> Optional[str]:
                     "Content-Type":  "application/json",
                 },
             )
-            resp = urllib.request.urlopen(req, timeout=60)
+            resp = urllib.request.urlopen(req, timeout=_timeout)
             result = json.loads(resp.read().decode())
             return result["choices"][0]["message"]["content"]
 
