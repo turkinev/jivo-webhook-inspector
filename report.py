@@ -45,6 +45,7 @@ from ai_processor import call_ai, CH_HOST, CH_PORT, CH_USER, CH_PASSWORD, CH_DAT
 TELEGRAM_BOT_TOKEN  = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID    = os.getenv("TELEGRAM_CHAT_ID", "")
 REPORT_MAX_TOKENS   = int(os.getenv("REPORT_MAX_TOKENS", "4000"))
+MM_REPORT_WEBHOOK   = os.getenv("MM_REPORT_WEBHOOK", "")
 
 # ---------------------------------------------------------------------------
 # Промпт для отчёта
@@ -305,6 +306,26 @@ def send_telegram(text: str):
         print(f"[error] Telegram: {e}")
 
 
+def send_mattermost(text: str):
+    """Отправляет отчёт в Mattermost через incoming webhook."""
+    if not MM_REPORT_WEBHOOK:
+        print("[warn] MM_REPORT_WEBHOOK не задан в .env")
+        return
+    # Mattermost: *text* = курсив, **text** = жирный — конвертируем из Telegram-формата
+    mm_text = text.replace("*", "**")
+    body = json.dumps({"text": mm_text}, ensure_ascii=False).encode("utf-8")
+    req = urllib.request.Request(
+        MM_REPORT_WEBHOOK,
+        data=body,
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        urllib.request.urlopen(req, timeout=15)
+        print("[ok] Отчёт отправлен в Mattermost")
+    except Exception as e:
+        print(f"[error] Mattermost: {e}")
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -349,6 +370,7 @@ def main():
         return
 
     send_telegram(full_text)
+    send_mattermost(full_text)
 
 
 if __name__ == "__main__":

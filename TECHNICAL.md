@@ -460,8 +460,8 @@ journalctl -u jivo_inspector -f
 # Healthcheck — каждый час
 0 * * * * cd /opt/jivo_inspector && venv/bin/python3 healthcheck.py > /dev/null 2>&1
 
-# Ежедневный отчёт — в 9:00
-0 9 * * * cd /opt/jivo_inspector && venv/bin/python3 report.py --period yesterday >> logs/report.log 2>&1
+# Ежедневный отчёт — в 8:00 (Telegram + Mattermost)
+0 8 * * * cd /opt/jivo_inspector && venv/bin/python3 report.py --period yesterday > /dev/null 2>&1
 
 # Еженедельный отчёт — понедельник в 9:05
 5 9 * * 1 cd /opt/jivo_inspector && venv/bin/python3 report.py --period week >> logs/report.log 2>&1
