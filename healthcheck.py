@@ -93,6 +93,11 @@ def check_jivo_silence() -> Tuple[bool, str]:
     if wd >= 5 or not (JIVO_WORK_START <= h < JIVO_WORK_END):
         return True, "вне рабочего времени — пропускаем"
 
+    # Grace period: с начала рабочего дня ещё не прошло JIVO_MAX_SILENCE_H часов
+    minutes_since_start = (h - JIVO_WORK_START) * 60 + now_samara.minute
+    if minutes_since_start < JIVO_MAX_SILENCE_H * 60:
+        return True, f"grace period — рабочий день начался {minutes_since_start} мин назад"
+
     try:
         params = urllib.parse.urlencode({
             "user": CH_USER, "password": CH_PASSWORD, "database": CH_DATABASE,
