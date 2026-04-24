@@ -719,10 +719,11 @@ tr.dialog-row td { padding: 0 !important; background: #f8f9fa; border-bottom: 2p
         <th>Результат</th>
         <th>Комментарий</th>
         <th>Канал</th>
+        <th>№ обращения</th>
       </tr>
     </thead>
     <tbody id="tbody">
-      <tr><td colspan="13" class="no-data"><span class="spinner"></span>Загрузка...</td></tr>
+      <tr><td colspan="14" class="no-data"><span class="spinner"></span>Загрузка...</td></tr>
     </tbody>
   </table>
 </div>
@@ -791,7 +792,7 @@ async function load(resetPage = true) {
   });
 
   const tbody = document.getElementById('tbody');
-  tbody.innerHTML = '<tr><td colspan="13" class="no-data"><span class="spinner"></span>Загрузка...</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="14" class="no-data"><span class="spinner"></span>Загрузка...</td></tr>';
   document.getElementById('count').textContent = '';
   document.getElementById('pagination').innerHTML = '';
 
@@ -813,7 +814,7 @@ async function load(resetPage = true) {
     document.getElementById('count').textContent =
       `${data.total} записей, стр. ${data.page} из ${data.pages}`;
   } catch (e) {
-    tbody.innerHTML = `<tr><td colspan="13" class="no-data">Ошибка загрузки: ${e.message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="14" class="no-data">Ошибка загрузки: ${e.message}</td></tr>`;
   }
 }
 
@@ -845,7 +846,7 @@ function renderPagination(page, pages, total) {
 function render(rows) {
   const tbody = document.getElementById('tbody');
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="13" class="no-data">Нет данных за выбранный период</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="14" class="no-data">Нет данных за выбранный период</td></tr>';
     return;
   }
 
@@ -896,6 +897,7 @@ function render(rows) {
       <td>${resultHtml}</td>
       <td><div class="editable" contenteditable="true" data-field="comment" data-orig="${esc(r.comment)}" data-placeholder="Добавить...">${esc(r.comment)}</div></td>
       <td class="col-channel ${chClass}">${channelHtml}</td>
+      <td class="col-login" style="color:#aaa">${isManual ? '' : esc(String(r.chat_id))}</td>
     </tr>`;
   }).join('');
 
@@ -1062,8 +1064,8 @@ function openSelect(cell) {
 const COL_WIDTHS_KEY = 'log_col_widths_v1';
 
 // Дефолтные ширины по порядку столбцов (px)
-// Дата, Время, Оператор, Тип автора, Автор, Логин, Тип, Категория, Подкатегория, Причина обращения, Результат, Комментарий, Канал
-const DEFAULT_COL_WIDTHS = [90, 55, 90, 90, 100, 110, 90, 120, 140, 340, 90, 140, 55];
+// Дата, Время, Оператор, Тип автора, Автор, Логин, Тип, Категория, Подкатегория, Причина обращения, Результат, Комментарий, Канал, № обращения
+const DEFAULT_COL_WIDTHS = [90, 55, 90, 90, 100, 110, 90, 120, 140, 340, 90, 140, 55, 90];
 
 function initResizableColumns() {
   const ths = [...document.querySelectorAll('thead th')];
@@ -1148,7 +1150,7 @@ async function toggleDialog(e, rowKey) {
     const expandTr = document.createElement('tr');
     expandTr.className = 'dialog-row';
     expandTr.dataset.dialogFor = rowKey;
-    expandTr.innerHTML = `<td colspan="13"><div class="dialog-wrap">${renderDialog(data)}</div></td>`;
+    expandTr.innerHTML = `<td colspan="14"><div class="dialog-wrap">${renderDialog(data)}</div></td>`;
     tr.after(expandTr);
     btn.textContent = '▶';
     btn.classList.add('open');
@@ -1233,6 +1235,7 @@ function prependManualRow(id, dateStr) {
     <td><div class="select-cell" data-field="result"  data-value="" onclick="openSelect(this)"><span style="color:#bbb">—</span></div></td>
     <td><div class="editable" contenteditable="true" data-field="comment" data-orig="" data-placeholder="Добавить..."></div></td>
     <td class="col-channel"><div class="select-cell" data-field="channel" data-value="Другой" onclick="openSelect(this)">Другой</div></td>
+    <td></td>
   `;
   tr.querySelectorAll('.editable').forEach(el => el.addEventListener('blur', onBlur));
   const tbody = document.getElementById('tbody');
