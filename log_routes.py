@@ -82,6 +82,71 @@ def ensure_table():
             ch_execute(f"ALTER TABLE support_log_edits ADD COLUMN IF NOT EXISTS {col} String DEFAULT ''")
         except Exception:
             pass
+    ensure_manual_table()
+
+
+def ensure_manual_table():
+    """Временная таблица для ручных строк журнала (до интеграции новых каналов)."""
+    ch_execute("""
+        CREATE TABLE IF NOT EXISTS manual_log_entries (
+            id              UInt64,
+            updated_at      DateTime DEFAULT now(),
+            date            Date     DEFAULT toDate(now()),
+            time            String   DEFAULT '',
+            channel         String   DEFAULT 'Другой',
+            operator        String   DEFAULT '',
+            source_type     String   DEFAULT '',
+            author          String   DEFAULT '',
+            appeal_type     String   DEFAULT '',
+            category        String   DEFAULT '',
+            subcategory     String   DEFAULT '',
+            problem_summary String   DEFAULT '',
+            result          String   DEFAULT '',
+            comment         String   DEFAULT ''
+        ) ENGINE = ReplacingMergeTree(updated_at)
+        ORDER BY id
+    """)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+_q = lambda s: s.replace("'", "\\'")
+
+
+def get_manual_rows(df: str, dt: str, operator: str = "", channel: str = "",
+                    stype: str = "", category: str = "", subcategory: str = "",
+                    result: str = "") -> list:
+    """Загружает ручные строки из manual_log_entries за период."""
+    try:
+        where = f"toDate(date) BETWEEN '{df}' AND '{dt}'"
+        if operator:    where += f" AND operator    = '{_q(operator)}'"
+        if channel:     where += f" AND channel     = '{_q(channel)}'"
+        if stype:       where += f" AND source_type = '{_q(stype)}'"
+        if category:    where += f" AND category    = '{_q(category)}'"
+        if subcategory: where += f" AND subcategory = '{_q(subcategory)}'"
+        if result:      where += f" AND result      = '{_q(result)}'"
+
+        rows = ch_query(f"""
+            SELECT
+                concat('m_', toString(id)) AS row_key,
+                0                          AS chat_id,
+                toString(date)             AS date,
+                time, operator, source_type, author,
+                ''                         AS login,
+                appeal_type, category, subcategory,
+                problem_summary, result, comment, channel
+            FROM manual_log_entries FINAL
+            WHERE {where}
+            ORDER BY date DESC, time DESC
+            FORMAT JSONEachRow
+        """)
+        for r in rows:
+            r["is_manual"] = True
+        return rows
+    except Exception:
+        return []
 
 
 # ---------------------------------------------------------------------------
@@ -144,6 +209,7 @@ def api_log(
     rows = ch_query(f"""
         SELECT
             d.chat_id                                                              AS chat_id,
+            toString(d.chat_id)                                                    AS row_key,
             toString(toDate(r.ts))                                                 AS date,
             substring(toString(r.ts), 12, 5)                                       AS time,
             ifNull(d.operator_name, '')                                            AS operator,
@@ -173,6 +239,14 @@ def api_log(
         LIMIT {PER_PAGE} OFFSET {offset}
         FORMAT JSONEachRow
     """)
+    for r in rows:
+        r["is_manual"] = False
+
+    # Ручные строки — только на первой странице, поверх основных
+    manual_rows = []
+    if page == 1:
+        manual_rows = get_manual_rows(df, dt, operator, channel, stype, category, subcategory, result)
+    all_rows = manual_rows + rows
 
     operators = ch_query("""
         SELECT DISTINCT operator_name
@@ -182,14 +256,73 @@ def api_log(
         FORMAT JSONEachRow
     """)
 
+    manual_total = len(get_manual_rows(df, dt, operator, channel, stype, category, subcategory, result)) if page != 1 else len(manual_rows)
+
     return JSONResponse({
-        "rows":      rows,
+        "rows":      all_rows,
         "operators": [r["operator_name"] for r in operators],
-        "total":     total,
+        "total":     total + manual_total,
         "page":      page,
         "per_page":  PER_PAGE,
         "pages":     max(1, -(-total // PER_PAGE)),  # ceil division
     })
+
+
+@router.post("/api/log/manual")
+def api_create_manual():
+    """Создаёт новую пустую строку вручную."""
+    ensure_manual_table()
+    import time as _time
+    new_id = int(_time.time() * 1000)
+    today  = str(date.today())
+    ch_execute(
+        "INSERT INTO manual_log_entries (id, date, channel) FORMAT JSONEachRow",
+        data=json.dumps({"id": new_id, "date": today, "channel": "Другой"}).encode("utf-8"),
+    )
+    return JSONResponse({"ok": True, "id": new_id, "date": today})
+
+
+class ManualEditPayload(BaseModel):
+    date:            Optional[str] = ""
+    time:            Optional[str] = ""
+    channel:         Optional[str] = ""
+    operator:        Optional[str] = ""
+    source_type:     Optional[str] = ""
+    author:          Optional[str] = ""
+    appeal_type:     Optional[str] = ""
+    category:        Optional[str] = ""
+    subcategory:     Optional[str] = ""
+    problem_summary: Optional[str] = ""
+    result:          Optional[str] = ""
+    comment:         Optional[str] = ""
+
+
+@router.post("/api/log/manual/{row_id}")
+def api_edit_manual(row_id: int, payload: ManualEditPayload):
+    today = str(date.today())
+    row = json.dumps({
+        "id":            row_id,
+        "date":          payload.date or today,
+        "time":          payload.time or "",
+        "channel":       payload.channel or "Другой",
+        "operator":      payload.operator or "",
+        "source_type":   payload.source_type or "",
+        "author":        payload.author or "",
+        "appeal_type":   payload.appeal_type or "",
+        "category":      payload.category or "",
+        "subcategory":   payload.subcategory or "",
+        "problem_summary": payload.problem_summary or "",
+        "result":        payload.result or "",
+        "comment":       payload.comment or "",
+    }, ensure_ascii=False)
+    ch_execute(
+        "INSERT INTO manual_log_entries "
+        "(id, date, time, channel, operator, source_type, author, appeal_type, "
+        "category, subcategory, problem_summary, result, comment) "
+        "FORMAT JSONEachRow",
+        data=row.encode("utf-8"),
+    )
+    return JSONResponse({"ok": True})
 
 
 class EditPayload(BaseModel):
@@ -407,6 +540,14 @@ tbody td:last-child { border-right: none; }
 }
 
 .no-data { text-align: center; padding: 60px 20px; color: #aaa; font-size: 14px; }
+
+/* Manual rows */
+tr[data-manual="1"] { background: #fffdf0; }
+tr[data-manual="1"]:hover { background: #fff8d6; }
+tr[data-manual="1"] td:first-child { border-left: 3px solid #f59e0b; }
+
+.btn-green { background: #0f9d58; }
+.btn-green:hover { background: #0b7a43; }
 .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #ddd; border-top-color: #1a73e8; border-radius: 50%; animation: spin .6s linear infinite; vertical-align: middle; margin-right: 6px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -483,6 +624,7 @@ tbody td:last-child { border-right: none; }
     </select>
   </div>
   <button class="btn" onclick="load()">Применить</button>
+  <button class="btn btn-green" id="btn_add" onclick="addManualRow()" title="Добавить строку вручную">+ Строка</button>
   <span class="count" id="count"></span>
 </div>
 
@@ -634,25 +776,52 @@ function render(rows) {
   }
 
   tbody.innerHTML = rows.map(r => {
-    const chClass = r.channel === 'Чат' ? 'ch-chat' : 'ch-ls';
+    const rowKey  = r.row_key !== undefined ? r.row_key : String(r.chat_id);
+    const isManual = !!r.is_manual;
+    const chClass = r.channel === 'Чат' ? 'ch-chat' : r.channel === 'ЛС' ? 'ch-ls' : '';
     const bc = badgeClass(r.result);
-    const resultHtml = bc
-      ? `<span class="badge ${bc}">${esc(r.result)}</span>`
-      : (r.result ? esc(r.result) : '<span style="color:#bbb">—</span>');
-    return `<tr data-id="${r.chat_id}">
-      <td class="col-date">${esc(r.date)}</td>
-      <td class="col-time">${esc(r.time)}</td>
-      <td>${esc(r.operator)}</td>
+
+    const resultHtml = isManual
+      ? `<div class="select-cell" data-field="result" data-value="${esc(r.result)}" onclick="openSelect(this)">${esc(r.result) || '<span style=color:#bbb>—</span>'}</div>`
+      : (bc ? `<span class="badge ${bc}">${esc(r.result)}</span>` : (r.result ? esc(r.result) : '<span style="color:#bbb">—</span>'));
+
+    const channelHtml = isManual
+      ? `<div class="select-cell" data-field="channel" data-value="${esc(r.channel)}" onclick="openSelect(this)">${esc(r.channel) || '<span style=color:#bbb>—</span>'}</div>`
+      : esc(r.channel);
+
+    const dateHtml = isManual
+      ? `<div class="editable" contenteditable="true" data-field="date" data-orig="${esc(r.date)}" data-placeholder="ГГГГ-ММ-ДД">${esc(r.date)}</div>`
+      : esc(r.date);
+    const timeHtml = isManual
+      ? `<div class="editable" contenteditable="true" data-field="time" data-orig="${esc(r.time)}" data-placeholder="ЧЧ:ММ">${esc(r.time)}</div>`
+      : esc(r.time);
+    const operatorHtml = isManual
+      ? `<div class="editable" contenteditable="true" data-field="operator" data-orig="${esc(r.operator)}" data-placeholder="Оператор">${esc(r.operator)}</div>`
+      : esc(r.operator);
+    const authorHtml = isManual
+      ? `<div class="editable" contenteditable="true" data-field="author" data-orig="${esc(r.author)}" data-placeholder="Автор">${esc(r.author)}</div>`
+      : esc(r.author);
+    const appealHtml = isManual
+      ? `<div class="editable" contenteditable="true" data-field="appeal_type" data-orig="${esc(r.appeal_type)}" data-placeholder="Тип">${esc(r.appeal_type)}</div>`
+      : esc(r.appeal_type);
+    const summaryHtml = isManual
+      ? `<div class="editable" contenteditable="true" data-field="problem_summary" data-orig="${esc(r.problem_summary)}" data-placeholder="Суть обращения">${esc(r.problem_summary)}</div>`
+      : `<div class="summary-text" onclick="this.classList.toggle('expanded')">${esc(r.problem_summary)}</div>`;
+
+    return `<tr data-id="${rowKey}"${isManual ? ' data-manual="1"' : ''}>
+      <td class="col-date">${dateHtml}</td>
+      <td class="col-time">${timeHtml}</td>
+      <td>${operatorHtml}</td>
       <td><div class="select-cell" data-field="source_type" data-value="${esc(r.source_type)}" onclick="openSelect(this)">${esc(r.source_type) || '<span style=color:#bbb>—</span>'}</div></td>
-      <td class="col-author" title="${esc(r.author)}">${esc(r.author)}</td>
+      <td class="col-author" title="${esc(r.author)}">${authorHtml}</td>
       <td class="col-login">${esc(extractLogin(r.author, r.source_type))}</td>
-      <td>${esc(r.appeal_type)}</td>
+      <td>${appealHtml}</td>
       <td><div class="select-cell" data-field="category"    data-value="${esc(r.category)}"    onclick="openSelect(this)">${esc(r.category)    || '<span style=color:#bbb>—</span>'}</div></td>
       <td><div class="select-cell" data-field="subcategory" data-value="${esc(r.subcategory)}" onclick="openSelect(this)">${esc(r.subcategory) || '<span style=color:#bbb>—</span>'}</div></td>
-      <td class="col-summary"><div class="summary-text" onclick="this.classList.toggle('expanded')">${esc(r.problem_summary)}</div></td>
+      <td class="col-summary">${summaryHtml}</td>
       <td>${resultHtml}</td>
       <td><div class="editable" contenteditable="true" data-field="comment" data-orig="${esc(r.comment)}" data-placeholder="Добавить...">${esc(r.comment)}</div></td>
-      <td class="col-channel ${chClass}">${esc(r.channel)}</td>
+      <td class="col-channel ${chClass}">${channelHtml}</td>
     </tr>`;
   }).join('');
 
@@ -721,10 +890,15 @@ function collectFields(row) {
 
 // ── Сохранить строку ────────────────────────────────────────────────────────
 async function saveRow(row, feedbackEl) {
-  const chatId = row.dataset.id;
+  const rowKey = row.dataset.id;
   const fields = collectFields(row);
+
+  const url = (rowKey && rowKey.startsWith('m_'))
+    ? '/api/log/manual/' + rowKey.slice(2)
+    : '/api/log/' + rowKey;
+
   try {
-    const resp = await fetch('/api/log/' + chatId, {
+    const resp = await fetch(url, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify(fields),
@@ -772,6 +946,10 @@ function openSelect(cell) {
     const catCell = row.querySelector('[data-field="category"]');
     const cat = catCell ? catCell.dataset.value : '';
     options = CAT_MAP[cat] || [];
+  } else if (field === 'result') {
+    options = ['Решено', 'Не решено', 'Частично', 'Эскалация'];
+  } else if (field === 'channel') {
+    options = ['Чат', 'ЛС', 'Email', 'Телефон', 'Другой'];
   }
 
   const sel = document.createElement('select');
@@ -865,6 +1043,50 @@ function restoreColWidths() {
       if (w) th.style.width = th.style.minWidth = th.style.maxWidth = w;
     });
   } catch (_) {}
+}
+
+// ── Добавление ручной строки ────────────────────────────────────────────────
+async function addManualRow() {
+  const btn = document.getElementById('btn_add');
+  btn.disabled = true;
+  try {
+    const resp = await fetch('/api/log/manual', { method: 'POST' });
+    const data = await resp.json();
+    if (!data.ok) throw new Error('Ошибка создания');
+    prependManualRow(data.id, data.date);
+  } catch(e) {
+    alert('Ошибка: ' + e.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function prependManualRow(id, dateStr) {
+  const rowKey = 'm_' + id;
+  const today  = dateStr || fmt(new Date());
+  const tr = document.createElement('tr');
+  tr.dataset.id     = rowKey;
+  tr.dataset.manual = '1';
+  tr.innerHTML = `
+    <td class="col-date"><div class="editable" contenteditable="true" data-field="date" data-orig="${esc(today)}" data-placeholder="ГГГГ-ММ-ДД">${esc(today)}</div></td>
+    <td class="col-time"><div class="editable" contenteditable="true" data-field="time" data-orig="" data-placeholder="ЧЧ:ММ"></div></td>
+    <td><div class="editable" contenteditable="true" data-field="operator" data-orig="" data-placeholder="Оператор"></div></td>
+    <td><div class="select-cell" data-field="source_type" data-value="" onclick="openSelect(this)"><span style="color:#bbb">—</span></div></td>
+    <td class="col-author"><div class="editable" contenteditable="true" data-field="author" data-orig="" data-placeholder="Автор"></div></td>
+    <td class="col-login"></td>
+    <td><div class="editable" contenteditable="true" data-field="appeal_type" data-orig="" data-placeholder="Тип"></div></td>
+    <td><div class="select-cell" data-field="category"    data-value="" onclick="openSelect(this)"><span style="color:#bbb">—</span></div></td>
+    <td><div class="select-cell" data-field="subcategory" data-value="" onclick="openSelect(this)"><span style="color:#bbb">—</span></div></td>
+    <td><div class="editable" contenteditable="true" data-field="problem_summary" data-orig="" data-placeholder="Суть обращения"></div></td>
+    <td><div class="select-cell" data-field="result"  data-value="" onclick="openSelect(this)"><span style="color:#bbb">—</span></div></td>
+    <td><div class="editable" contenteditable="true" data-field="comment" data-orig="" data-placeholder="Добавить..."></div></td>
+    <td class="col-channel"><div class="select-cell" data-field="channel" data-value="Другой" onclick="openSelect(this)">Другой</div></td>
+  `;
+  tr.querySelectorAll('.editable').forEach(el => el.addEventListener('blur', onBlur));
+  const tbody = document.getElementById('tbody');
+  if (tbody.querySelector('.no-data')) tbody.innerHTML = '';
+  tbody.insertBefore(tr, tbody.firstChild);
+  tr.querySelector('.editable').focus();
 }
 
 initFilters();
