@@ -610,17 +610,17 @@ tr[data-manual="1"] td:first-child { border-left: 3px solid #f59e0b; }
 tr.dialog-row td { padding: 0 !important; background: #f8f9fa; border-bottom: 2px solid #e0e0e0; }
 .dialog-wrap { padding: 14px 20px; max-height: 420px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
 .d-msg { display: flex; }
-.d-msg.visitor { justify-content: flex-end; }
-.d-msg.agent   { justify-content: flex-start; }
+.d-msg.visitor { padding-left: 16px; }
+.d-msg.agent   { padding-left: 0; }
 .d-bubble-wrap { max-width: 65%; }
 .d-name { font-size: 10px; color: #999; margin-bottom: 2px; }
-.d-msg.visitor .d-name { text-align: right; }
 .d-bubble {
   padding: 7px 11px; border-radius: 12px;
   font-size: 12px; line-height: 1.5; word-break: break-word; white-space: pre-wrap;
 }
-.d-bubble.visitor { background: #1a73e8; color: #fff; border-bottom-right-radius: 3px; }
+.d-bubble.visitor { background: #1a73e8; color: #fff; border-bottom-left-radius: 3px; }
 .d-bubble.agent   { background: #fff; border: 1px solid #ddd; color: #333; border-bottom-left-radius: 3px; }
+.d-time { font-size: 10px; color: #bbb; margin-top: 3px; }
 .d-empty { color: #aaa; font-style: italic; font-size: 12px; padding: 8px 0; }
 .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #ddd; border-top-color: #1a73e8; border-radius: 50%; animation: spin .6s linear infinite; vertical-align: middle; margin-right: 6px; }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -1158,18 +1158,27 @@ async function toggleDialog(e, rowKey) {
   }
 }
 
+function fmtMsgTime(ts) {
+  if (!ts) return '';
+  const d = new Date(ts > 1e10 ? ts : ts * 1000);
+  return d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+}
+
 function renderDialog(data) {
   const msgs = data.messages || [];
   if (!msgs.length) return `<div class="d-empty">Сообщения недоступны</div>`;
   return msgs.map(m => {
-    const isV   = m.type === 'visitor';
-    const cls   = isV ? 'visitor' : 'agent';
-    const name  = isV ? esc(data.visitor || 'Клиент') : esc(data.operator || 'Оператор');
-    const text  = esc((m.message || '').trim());
+    const isV  = m.type === 'visitor';
+    const cls  = isV ? 'visitor' : 'agent';
+    const name = isV ? esc(data.visitor || 'Клиент') : esc(data.operator || 'Оператор');
+    const text = esc((m.message || '').trim());
+    const ts   = m.timestamp || m.ts || m.time || 0;
+    const time = fmtMsgTime(ts);
     return `<div class="d-msg ${cls}">
       <div class="d-bubble-wrap">
         <div class="d-name">${name}</div>
         <div class="d-bubble ${cls}">${text}</div>
+        ${time ? `<div class="d-time">${time}</div>` : ''}
       </div>
     </div>`;
   }).join('');
