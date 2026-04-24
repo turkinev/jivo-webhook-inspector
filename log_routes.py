@@ -55,8 +55,17 @@ def ch_query(sql: str) -> list:
 
 
 def ch_execute(sql: str, data: bytes = None):
-    url = f"http://{CH_HOST}:{CH_PORT}/?{_params()}"
-    body = data if data is not None else sql.encode("utf-8")
+    if data is not None:
+        # INSERT: SQL в URL query-параметре, данные в теле
+        params = urllib.parse.urlencode({
+            "query": sql,
+            "user": CH_USER, "password": CH_PASSWORD, "database": CH_DATABASE,
+        })
+        url  = f"http://{CH_HOST}:{CH_PORT}/?{params}"
+        body = data
+    else:
+        url  = f"http://{CH_HOST}:{CH_PORT}/?{_params()}"
+        body = sql.encode("utf-8")
     req = urllib.request.Request(url, data=body, method="POST")
     try:
         urllib.request.urlopen(req, timeout=15)
