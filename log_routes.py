@@ -277,6 +277,31 @@ def api_log(
     })
 
 
+@router.get("/api/log/dialog/{chat_id}")
+def api_dialog(chat_id: int):
+    rows = ch_query(f"""
+        SELECT chat_messages_json,
+               ifNull(visitor_name, '')  AS visitor_name,
+               ifNull(operator_name, '') AS operator_name
+        FROM dialogs
+        WHERE chat_id = {chat_id}
+        LIMIT 1
+        FORMAT JSONEachRow
+    """)
+    if not rows:
+        return JSONResponse({"messages": [], "visitor": "", "operator": ""})
+    r = rows[0]
+    try:
+        messages = json.loads(r.get("chat_messages_json") or "[]")
+    except Exception:
+        messages = []
+    return JSONResponse({
+        "messages": messages,
+        "visitor":  r.get("visitor_name", ""),
+        "operator": r.get("operator_name", ""),
+    })
+
+
 @router.post("/api/log/manual")
 def api_create_manual():
     """Создаёт новую пустую строку вручную."""
@@ -571,6 +596,32 @@ tr[data-manual="1"] td:first-child { border-left: 3px solid #f59e0b; }
   font-size: 15px; line-height: 1; padding: 0 2px;
 }
 .del-btn:hover { color: #e53e3e; }
+
+/* Expand dialog */
+.expand-btn {
+  cursor: pointer; color: #ccc; font-size: 9px;
+  margin-right: 4px; display: inline-block;
+  transition: transform .15s, color .15s;
+  user-select: none; vertical-align: middle;
+}
+.expand-btn:hover { color: #1a73e8; }
+.expand-btn.open { transform: rotate(90deg); color: #1a73e8; }
+
+tr.dialog-row td { padding: 0 !important; background: #f8f9fa; border-bottom: 2px solid #e0e0e0; }
+.dialog-wrap { padding: 14px 20px; max-height: 420px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+.d-msg { display: flex; }
+.d-msg.visitor { justify-content: flex-end; }
+.d-msg.agent   { justify-content: flex-start; }
+.d-bubble-wrap { max-width: 65%; }
+.d-name { font-size: 10px; color: #999; margin-bottom: 2px; }
+.d-msg.visitor .d-name { text-align: right; }
+.d-bubble {
+  padding: 7px 11px; border-radius: 12px;
+  font-size: 12px; line-height: 1.5; word-break: break-word; white-space: pre-wrap;
+}
+.d-bubble.visitor { background: #1a73e8; color: #fff; border-bottom-right-radius: 3px; }
+.d-bubble.agent   { background: #fff; border: 1px solid #ddd; color: #333; border-bottom-left-radius: 3px; }
+.d-empty { color: #aaa; font-style: italic; font-size: 12px; padding: 8px 0; }
 .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #ddd; border-top-color: #1a73e8; border-radius: 50%; animation: spin .6s linear infinite; vertical-align: middle; margin-right: 6px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -814,7 +865,7 @@ function render(rows) {
 
     const dateHtml = isManual
       ? `<button class="del-btn" onclick="deleteManualRow(this,'${rowKey}')" title="Удалить строку">×</button><div class="editable" contenteditable="true" data-field="date" data-orig="${esc(r.date)}" data-placeholder="ГГГГ-ММ-ДД">${esc(r.date)}</div>`
-      : esc(r.date);
+      : `<span class="expand-btn" onclick="toggleDialog(event,'${rowKey}')">▶</span>${esc(r.date)}`;
     const timeHtml = isManual
       ? `<div class="editable" contenteditable="true" data-field="time" data-orig="${esc(r.time)}" data-placeholder="ЧЧ:ММ">${esc(r.time)}</div>`
       : esc(r.time);
@@ -1066,6 +1117,62 @@ function restoreColWidths() {
       if (w) th.style.width = th.style.minWidth = th.style.maxWidth = w;
     });
   } catch (_) {}
+}
+
+// ── Диалог (разворачивание строки) ──────────────────────────────────────────
+const _dialogCache = {};
+
+async function toggleDialog(e, rowKey) {
+  e.stopPropagation();
+  const btn = e.currentTarget;
+  const tr  = btn.closest('tr');
+  const next = tr.nextElementSibling;
+
+  // Свернуть если уже открыт
+  if (next && next.dataset.dialogFor === rowKey) {
+    next.remove();
+    btn.classList.remove('open');
+    return;
+  }
+
+  btn.textContent = '…';
+  btn.classList.remove('open');
+
+  try {
+    let data = _dialogCache[rowKey];
+    if (!data) {
+      const resp = await fetch('/api/log/dialog/' + rowKey);
+      data = await resp.json();
+      _dialogCache[rowKey] = data;
+    }
+    const expandTr = document.createElement('tr');
+    expandTr.className = 'dialog-row';
+    expandTr.dataset.dialogFor = rowKey;
+    expandTr.innerHTML = `<td colspan="13"><div class="dialog-wrap">${renderDialog(data)}</div></td>`;
+    tr.after(expandTr);
+    btn.textContent = '▶';
+    btn.classList.add('open');
+  } catch(err) {
+    btn.textContent = '▶';
+    console.error('Dialog load error:', err);
+  }
+}
+
+function renderDialog(data) {
+  const msgs = data.messages || [];
+  if (!msgs.length) return `<div class="d-empty">Сообщения недоступны</div>`;
+  return msgs.map(m => {
+    const isV   = m.type === 'visitor';
+    const cls   = isV ? 'visitor' : 'agent';
+    const name  = isV ? esc(data.visitor || 'Клиент') : esc(data.operator || 'Оператор');
+    const text  = esc((m.message || '').trim());
+    return `<div class="d-msg ${cls}">
+      <div class="d-bubble-wrap">
+        <div class="d-name">${name}</div>
+        <div class="d-bubble ${cls}">${text}</div>
+      </div>
+    </div>`;
+  }).join('');
 }
 
 // ── Удаление ручной строки ──────────────────────────────────────────────────
