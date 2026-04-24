@@ -306,6 +306,12 @@ class ManualEditPayload(BaseModel):
     comment:         Optional[str] = ""
 
 
+@router.delete("/api/log/manual/{row_id}")
+def api_delete_manual(row_id: int):
+    ch_execute(f"ALTER TABLE manual_log_entries DELETE WHERE id = {row_id}")
+    return JSONResponse({"ok": True})
+
+
 @router.post("/api/log/manual/{row_id}")
 def api_edit_manual(row_id: int, payload: ManualEditPayload):
     today = str(date.today())
@@ -557,6 +563,14 @@ tr[data-manual="1"] td:first-child { border-left: 3px solid #f59e0b; }
 
 .btn-green { background: #0f9d58; }
 .btn-green:hover { background: #0b7a43; }
+
+.del-btn {
+  float: right; margin-left: 4px;
+  background: none; border: none;
+  color: #ccc; cursor: pointer;
+  font-size: 15px; line-height: 1; padding: 0 2px;
+}
+.del-btn:hover { color: #e53e3e; }
 .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #ddd; border-top-color: #1a73e8; border-radius: 50%; animation: spin .6s linear infinite; vertical-align: middle; margin-right: 6px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -799,7 +813,7 @@ function render(rows) {
       : esc(r.channel);
 
     const dateHtml = isManual
-      ? `<div class="editable" contenteditable="true" data-field="date" data-orig="${esc(r.date)}" data-placeholder="ГГГГ-ММ-ДД">${esc(r.date)}</div>`
+      ? `<button class="del-btn" onclick="deleteManualRow(this,'${rowKey}')" title="Удалить строку">×</button><div class="editable" contenteditable="true" data-field="date" data-orig="${esc(r.date)}" data-placeholder="ГГГГ-ММ-ДД">${esc(r.date)}</div>`
       : esc(r.date);
     const timeHtml = isManual
       ? `<div class="editable" contenteditable="true" data-field="time" data-orig="${esc(r.time)}" data-placeholder="ЧЧ:ММ">${esc(r.time)}</div>`
@@ -1054,6 +1068,19 @@ function restoreColWidths() {
   } catch (_) {}
 }
 
+// ── Удаление ручной строки ──────────────────────────────────────────────────
+async function deleteManualRow(btn, rowKey) {
+  if (!confirm('Удалить строку?')) return;
+  const id = rowKey.slice(2);
+  try {
+    const resp = await fetch('/api/log/manual/' + id, { method: 'DELETE' });
+    if (resp.ok) btn.closest('tr').remove();
+    else alert('Ошибка удаления');
+  } catch(e) {
+    alert('Ошибка: ' + e.message);
+  }
+}
+
 // ── Добавление ручной строки ────────────────────────────────────────────────
 async function addManualRow() {
   const btn = document.getElementById('btn_add');
@@ -1077,7 +1104,7 @@ function prependManualRow(id, dateStr) {
   tr.dataset.id     = rowKey;
   tr.dataset.manual = '1';
   tr.innerHTML = `
-    <td class="col-date"><div class="editable" contenteditable="true" data-field="date" data-orig="${esc(today)}" data-placeholder="ГГГГ-ММ-ДД">${esc(today)}</div></td>
+    <td class="col-date"><button class="del-btn" onclick="deleteManualRow(this,'${rowKey}')" title="Удалить строку">×</button><div class="editable" contenteditable="true" data-field="date" data-orig="${esc(today)}" data-placeholder="ГГГГ-ММ-ДД">${esc(today)}</div></td>
     <td class="col-time"><div class="editable" contenteditable="true" data-field="time" data-orig="" data-placeholder="ЧЧ:ММ"></div></td>
     <td><div class="editable" contenteditable="true" data-field="operator" data-orig="" data-placeholder="Оператор"></div></td>
     <td><div class="select-cell" data-field="source_type" data-value="" onclick="openSelect(this)"><span style="color:#bbb">—</span></div></td>
