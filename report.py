@@ -329,22 +329,48 @@ def send_telegram(text: str):
         print(f"[error] Telegram: {e}")
 
 
-def send_mattermost(text: str):
-    """Отправляет отчёт в Mattermost через incoming webhook."""
-    if not MM_REPORT_WEBHOOK:
-        print("[warn] MM_REPORT_WEBHOOK не задан в .env")
-        return
-    # AI уже генерирует **жирный** (стандартный Markdown), Mattermost понимает его нативно
-    mm_text = text
-    body = json.dumps({"text": mm_text}, ensure_ascii=False).encode("utf-8")
-    req = urllib.request.Request(
+MM_CHUNK_SIZE = int(os.getenv("MM_CHUNK_SIZE", "14000"))
+
+
+def _mm_chunks(text: str) -> list[str]:
+    """Разбивает текст на части до MM_CHUNK_SIZE символов по границам строк."""
+    if len(text) <= MM_CHUNK_SIZE:
+        return [text]
+    chunks, current = [], []
+    size = 0
+    for line in text.splitlines(keepends=True):
+        if size + len(line) > MM_CHUNK_SIZE and current:
+            chunks.append("".join(current))
+            current, size = [], 0
+        current.append(line)
+        size += len(line)
+    if current:
+        chunks.append("".join(current))
+    return chunks
+
+
+def _mm_post(text: str):
+    body = json.dumps({"text": text}, ensure_ascii=False).encode("utf-8")
+    req  = urllib.request.Request(
         MM_REPORT_WEBHOOK,
         data=body,
         headers={"Content-Type": "application/json"},
     )
+    urllib.request.urlopen(req, timeout=15)
+
+
+def send_mattermost(text: str):
+    """Отправляет отчёт в Mattermost, разбивая на части если текст длиннее MM_CHUNK_SIZE."""
+    if not MM_REPORT_WEBHOOK:
+        print("[warn] MM_REPORT_WEBHOOK не задан в .env")
+        return
+    chunks = _mm_chunks(text)
     try:
-        urllib.request.urlopen(req, timeout=15)
-        print("[ok] Отчёт отправлен в Mattermost")
+        for i, chunk in enumerate(chunks, 1):
+            _mm_post(chunk)
+            if len(chunks) > 1:
+                print(f"[ok] Mattermost часть {i}/{len(chunks)}")
+        print(f"[ok] Отчёт отправлен в Mattermost ({len(chunks)} сообщ., {len(text)} симв.)")
     except Exception as e:
         print(f"[error] Mattermost: {e}")
 
