@@ -17,7 +17,7 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 
@@ -138,8 +138,10 @@ def ch_query(sql: str) -> list:
 # Сбор статистики
 # ---------------------------------------------------------------------------
 
-def period_filters(period: str):
+def period_filters(period: str, for_date: str = None):
     """Возвращает SQL-выражения границ периода (от, до)."""
+    if for_date:
+        return f"toDate('{for_date}')", f"toDate('{for_date}') + 1"
     if period == "week":
         return "toMonday(today())", "today() + 1"
     if period == "yesterday":
@@ -151,8 +153,8 @@ def period_filters(period: str):
 MEDIAN_DAYS = int(os.getenv("REPORT_MEDIAN_DAYS", "30"))
 
 
-def collect_stats(period: str) -> dict:
-    cf, ct = period_filters(period)
+def collect_stats(period: str, for_date: str = None) -> dict:
+    cf, ct = period_filters(period, for_date)
 
     ts_subquery = """(
         SELECT chat_id, max(received_at) AS ts
@@ -385,13 +387,17 @@ def send_mattermost(text: str):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--period", choices=["day", "yesterday", "week"], default="yesterday",
-                        help="yesterday = вчера vs позавчера (по умолчанию), day = сегодня vs вчера, week = эта неделя vs прошлая")
+                        help="yesterday = вчера (по умолчанию), day = сегодня, week = эта неделя")
+    parser.add_argument("--date", default=None,
+                        help="конкретная дата в формате ГГГГ-ММ-ДД, например --date 2026-04-23")
     parser.add_argument("--dry-run", action="store_true",
-                        help="не отправлять в Telegram, вывести в консоль")
+                        help="не отправлять, вывести в консоль")
     args = parser.parse_args()
 
-    print(f"Собираем статистику [{args.period}]...")
-    stats = collect_stats(args.period)
+    for_date = args.date
+    label    = for_date if for_date else args.period
+    print(f"Собираем статистику [{label}]...")
+    stats = collect_stats(args.period, for_date)
     print(f"Диалогов: {stats['total']} (медиана {stats['median_days']}д: {stats['median_total']})")
 
     if stats["total"] == 0:
@@ -413,7 +419,10 @@ def main():
         print("[error] AI не ответил")
         return
 
-    period_label = {"day": "день (сегодня)", "yesterday": "день (вчера)", "week": "неделю"}[args.period]
+    if for_date:
+        period_label = f"день ({for_date})"
+    else:
+        period_label = {"day": "день (сегодня)", "yesterday": "день (вчера)", "week": "неделю"}[args.period]
     header = f"📊 *Отчёт за {period_label} — {stats['date']}*"
 
     # Разбиваем по разделителю ===SPLIT=== на отдельные блоки
