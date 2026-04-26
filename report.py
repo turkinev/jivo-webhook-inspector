@@ -44,7 +44,7 @@ from ai_processor import call_ai, CH_HOST, CH_PORT, CH_USER, CH_PASSWORD, CH_DAT
 
 TELEGRAM_BOT_TOKEN  = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID    = os.getenv("TELEGRAM_CHAT_ID", "")
-REPORT_MAX_TOKENS   = int(os.getenv("REPORT_MAX_TOKENS", "4000"))
+REPORT_MAX_TOKENS   = int(os.getenv("REPORT_MAX_TOKENS", "16000"))
 MM_REPORT_WEBHOOK   = os.getenv("MM_REPORT_WEBHOOK", "")
 REPORT_AI_MODEL     = os.getenv("REPORT_AI_MODEL", "openai/gpt-5.4")
 
@@ -334,7 +334,7 @@ def send_telegram(text: str):
         print(f"[error] Telegram: {e}")
 
 
-MM_CHUNK_SIZE = int(os.getenv("MM_CHUNK_SIZE", "14000"))
+MM_CHUNK_SIZE = int(os.getenv("MM_CHUNK_SIZE", "3500"))
 
 
 def _mm_chunks(text: str) -> list[str]:
