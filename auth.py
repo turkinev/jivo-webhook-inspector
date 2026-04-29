@@ -18,7 +18,7 @@ CLIENT_ID       = os.getenv("AUTHENTIK_CLIENT_ID", "")
 CLIENT_SECRET   = os.getenv("AUTHENTIK_CLIENT_SECRET", "")
 SESSION_SECRET  = os.getenv("SESSION_SECRET", "changeme-set-in-env")
 APP_BASE_URL    = os.getenv("APP_BASE_URL", "http://localhost:62000").rstrip("/")
-SLUG            = "jivo-inspector"
+SLUG            = "communication-inspector"
 
 AUTHORIZE_URL = f"{AUTHENTIK_URL}/application/o/{SLUG}/authorize/"
 TOKEN_URL     = f"{AUTHENTIK_URL}/application/o/{SLUG}/token/"
