@@ -284,6 +284,11 @@ async def list_logs():
     )
 
 
+@app.get("/")
+async def root():
+    return RedirectResponse("/log", status_code=302)
+
+
 @app.get("/health")
 async def health():
     """Статус сервиса + проверка подключения к ClickHouse."""
