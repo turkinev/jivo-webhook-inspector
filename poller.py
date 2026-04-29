@@ -138,7 +138,7 @@ def save_dialog(dialog) -> None:
         "event_name":            "chat_finished",
         "event_timestamp":       dialog.finished_at,
         "chat_id":               dialog.chat_id,
-        "widget_id":             "",
+        "widget_id":             getattr(dialog, "widget_id", ""),
         "visitor_id":            int(dialog.visitor_id) if str(dialog.visitor_id).isdigit() else 0,
         "visitor_name":          dialog.visitor_name,
         "visitor_chats_count":   dialog.chats_count,
@@ -169,6 +169,7 @@ def save_dialog(dialog) -> None:
 
 SOURCES = {
     "site_pm": "connectors.site_pm",
+    "claim":   "connectors.claim",
 }
 
 

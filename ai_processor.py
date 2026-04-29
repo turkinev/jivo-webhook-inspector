@@ -217,17 +217,34 @@ needs_escalation: 0 или 1.
 
 
 def build_prompt(payload: dict) -> str:
+    source   = payload.get("source", "jivo")
     visitor  = payload.get("visitor") or {}
     agents   = payload.get("agents") or []
     agent    = agents[0] if agents else {}
     page     = payload.get("page") or {}
+
+    plain = payload.get("plain_messages") or ""
+
+    # Для обращений через форму сайта (claim) — добавляем пояснение для AI,
+    # так как это одностороннее обращение без ответа оператора.
+    if source == "claim":
+        claim_type = agent.get("name") or payload.get("widget_id") or "обращение"
+        note = (
+            f"[КОНТЕКСТ: Это одностороннее обращение через форму сайта "
+            f"(тип: {claim_type}). Ответа оператора нет. "
+            f"Поставь agent_quality_score=0, agent_quality_label='Плохо', "
+            f"agent_quality_comment=''. "
+            f"resolution_status обычно 'Не решено' — обращение зарегистрировано, "
+            f"но не обработано оператором в этом тексте.]\n\n"
+        )
+        plain = note + plain
 
     return ANALYSIS_PROMPT.format(
         visitor_name   = visitor.get("name") or "неизвестен",
         chats_count    = visitor.get("chats_count") or 0,
         page_url       = page.get("url") or "",
         operator_name  = agent.get("name") or "неизвестен",
-        plain_messages = payload.get("plain_messages") or "",
+        plain_messages = plain,
     )
 
 

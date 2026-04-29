@@ -215,6 +215,8 @@ def api_log(
         where += " AND d.source = 'jivo'"
     elif channel == "ЛС":
         where += " AND d.source = 'site_pm'"
+    elif channel == "Форма":
+        where += " AND d.source = 'claim'"
     # Фильтры по вычисляемым полям (с учётом правок из support_log_edits)
     if stype:
         where += f" AND if(e.source_type!=''  , e.source_type , ifNull(a.source_type,''))  = '{q(stype)}'"
@@ -237,7 +239,7 @@ def api_log(
             WHERE event_name = 'chat_finished'
             GROUP BY chat_id
         ) r ON d.chat_id = r.chat_id
-        LEFT JOIN dialog_analysis a ON d.chat_id = a.chat_id
+        LEFT JOIN dialog_analysis a ON d.chat_id = a.chat_id AND d.source = a.source
         LEFT JOIN (SELECT * FROM support_log_edits FINAL) e ON d.chat_id = e.chat_id
         LEFT JOIN (SELECT * FROM day_tracker_edits FINAL) t ON d.chat_id = t.chat_id
         WHERE {where}
@@ -264,7 +266,7 @@ def api_log(
                ifNull(a.resolution_status, ''))                                    AS result,
             ifNull(e.comment, '')                                                  AS comment,
             ifNull(t.responsible_dept, '')                                         AS responsible_dept,
-            multiIf(d.source='jivo','Чат',d.source='site_pm','ЛС',d.source)       AS channel
+            multiIf(d.source='jivo','Чат',d.source='site_pm','ЛС',d.source='claim','Форма',d.source) AS channel
         FROM dialogs d
         JOIN (
             SELECT chat_id, max(received_at) AS ts
@@ -272,7 +274,7 @@ def api_log(
             WHERE event_name = 'chat_finished'
             GROUP BY chat_id
         ) r ON d.chat_id = r.chat_id
-        LEFT JOIN dialog_analysis a ON d.chat_id = a.chat_id
+        LEFT JOIN dialog_analysis a ON d.chat_id = a.chat_id AND d.source = a.source
         LEFT JOIN (SELECT * FROM support_log_edits FINAL) e ON d.chat_id = e.chat_id
         LEFT JOIN (SELECT * FROM day_tracker_edits FINAL) t ON d.chat_id = t.chat_id
         WHERE {where}
@@ -563,6 +565,7 @@ tbody td:last-child { border-right: none; }
 /* Channel colors */
 .ch-chat { color: #1a73e8; }
 .ch-ls   { color: #0f9d58; }
+.ch-form { color: #e67e22; }
 
 /* Ответственный отдел */
 thead th.col-dept { background: #eef2ff; color: #3730a3; }
@@ -730,6 +733,7 @@ tr.dialog-row td { padding: 0 !important; background: #f8f9fa; border-bottom: 2p
       <option value="">Все</option>
       <option value="Чат">Чат (Jivo)</option>
       <option value="ЛС">ЛС (сайт)</option>
+      <option value="Форма">Форма (сайт)</option>
     </select>
   </div>
   <div class="filter-group">
@@ -946,7 +950,7 @@ function render(rows) {
   tbody.innerHTML = rows.map(r => {
     const rowKey  = r.row_key !== undefined ? r.row_key : String(r.chat_id);
     const isManual = !!r.is_manual;
-    const chClass = r.channel === 'Чат' ? 'ch-chat' : r.channel === 'ЛС' ? 'ch-ls' : '';
+    const chClass = r.channel === 'Чат' ? 'ch-chat' : r.channel === 'ЛС' ? 'ch-ls' : r.channel === 'Форма' ? 'ch-form' : '';
     const bc = badgeClass(r.result);
 
     // Результат: manual — всегда select; manager — select; support — badge
@@ -1388,6 +1392,8 @@ def api_day_tracker(
         where += " AND d.source = 'jivo'"
     elif channel == "ЛС":
         where += " AND d.source = 'site_pm'"
+    elif channel == "Форма":
+        where += " AND d.source = 'claim'"
     if stype:
         where += f" AND if(e.source_type!='', e.source_type, ifNull(a.source_type,'')) = '{q(stype)}'"
     if category:
@@ -1411,7 +1417,7 @@ def api_day_tracker(
             GROUP BY chat_id
         ) r ON d.chat_id = r.chat_id
         LEFT JOIN (SELECT * FROM support_log_edits FINAL) e ON d.chat_id = e.chat_id
-        LEFT JOIN dialog_analysis a ON d.chat_id = a.chat_id
+        LEFT JOIN dialog_analysis a ON d.chat_id = a.chat_id AND d.source = a.source
         LEFT JOIN (SELECT * FROM day_tracker_edits FINAL) t ON d.chat_id = t.chat_id
         WHERE {where}
         FORMAT JSONEachRow
@@ -1435,7 +1441,7 @@ def api_day_tracker(
                e.result, ifNull(a.resolution_status, ''))                          AS result,
             ifNull(t.responsible_dept, '')                                         AS responsible_dept,
             ifNull(e.comment, '')                                                  AS comment,
-            multiIf(d.source='jivo','Чат',d.source='site_pm','ЛС',d.source)       AS channel
+            multiIf(d.source='jivo','Чат',d.source='site_pm','ЛС',d.source='claim','Форма',d.source) AS channel
         FROM dialogs d
         JOIN (
             SELECT chat_id, max(received_at) AS ts
@@ -1443,7 +1449,7 @@ def api_day_tracker(
             WHERE event_name = 'chat_finished'
             GROUP BY chat_id
         ) r ON d.chat_id = r.chat_id
-        LEFT JOIN dialog_analysis a ON d.chat_id = a.chat_id
+        LEFT JOIN dialog_analysis a ON d.chat_id = a.chat_id AND d.source = a.source
         LEFT JOIN (SELECT * FROM support_log_edits FINAL) e ON d.chat_id = e.chat_id
         LEFT JOIN (SELECT * FROM day_tracker_edits FINAL) t ON d.chat_id = t.chat_id
         WHERE {where}
@@ -1616,6 +1622,7 @@ tbody td:last-child { border-right: none; }
 /* Channel colors */
 .ch-chat { color: #1a73e8; }
 .ch-ls   { color: #0f9d58; }
+.ch-form { color: #e67e22; }
 
 /* Editable cells */
 .editable {
@@ -1730,6 +1737,7 @@ tbody td:last-child { border-right: none; }
       <option value="">Все</option>
       <option value="Чат">Чат (Jivo)</option>
       <option value="ЛС">ЛС (сайт)</option>
+      <option value="Форма">Форма (сайт)</option>
     </select>
   </div>
   <div class="filter-group">
