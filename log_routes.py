@@ -237,6 +237,9 @@ def api_log(
             WHERE event_name = 'chat_finished'
             GROUP BY chat_id
         ) r ON d.chat_id = r.chat_id
+        LEFT JOIN dialog_analysis a ON d.chat_id = a.chat_id
+        LEFT JOIN (SELECT * FROM support_log_edits FINAL) e ON d.chat_id = e.chat_id
+        LEFT JOIN (SELECT * FROM day_tracker_edits FINAL) t ON d.chat_id = t.chat_id
         WHERE {where}
         FORMAT JSONEachRow
     """)
