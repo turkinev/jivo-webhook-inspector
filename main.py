@@ -83,8 +83,21 @@ async def auth_callback(request: Request):
 
 @app.get("/auth/logout")
 async def auth_logout():
-    resp = RedirectResponse("/auth/login", status_code=302)
-    resp.delete_cookie(auth_module.COOKIE_NAME)
+    # Редиректим на Authentik end-session, который завершит SSO-сессию
+    # и после этого вернёт пользователя на /auth/login нашего приложения
+    import urllib.parse as _up
+    post_logout = f"{auth_module.APP_BASE_URL}/auth/login"
+    end_session_url = (
+        f"{auth_module.AUTHENTIK_URL}/application/o/{auth_module.SLUG}/end-session/"
+        f"?post_logout_redirect_uri={_up.quote(post_logout, safe='')}"
+    )
+    resp = RedirectResponse(end_session_url, status_code=302)
+    # Удаляем сессионную cookie — явно с теми же атрибутами, с которыми ставили
+    resp.set_cookie(
+        auth_module.COOKIE_NAME, "",
+        max_age=0, expires=0,
+        httponly=True, samesite="lax",
+    )
     return resp
 
 
