@@ -20,8 +20,8 @@ SESSION_SECRET  = os.getenv("SESSION_SECRET", "changeme-set-in-env")
 APP_BASE_URL    = os.getenv("APP_BASE_URL", "http://localhost:62000").rstrip("/")
 SLUG            = "communication-inspector"
 
-AUTHORIZE_URL = f"{AUTHENTIK_URL}/application/o/{SLUG}/authorize/"
-TOKEN_URL     = f"{AUTHENTIK_URL}/application/o/{SLUG}/token/"
+AUTHORIZE_URL = f"{AUTHENTIK_URL}/application/o/authorize/"
+TOKEN_URL     = f"{AUTHENTIK_URL}/application/o/token/"
 USERINFO_URL  = f"{AUTHENTIK_URL}/application/o/userinfo/"
 REDIRECT_URI  = f"{APP_BASE_URL}/auth/callback"
 
