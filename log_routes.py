@@ -92,6 +92,14 @@ def ensure_table():
             ch_execute(f"ALTER TABLE support_log_edits ADD COLUMN IF NOT EXISTS {col} String DEFAULT ''")
         except Exception:
             pass
+    ch_execute("""
+        CREATE TABLE IF NOT EXISTS day_tracker_edits (
+            chat_id          UInt64,
+            updated_at       DateTime DEFAULT now(),
+            responsible_dept String   DEFAULT ''
+        ) ENGINE = ReplacingMergeTree(updated_at)
+        ORDER BY chat_id
+    """)
     ensure_manual_table()
 
 
@@ -158,14 +166,23 @@ def get_manual_rows(df: str, dt: str, operator: str = "", channel: str = "",
     except Exception:
         return []
 
-    ch_execute("""
-        CREATE TABLE IF NOT EXISTS day_tracker_edits (
-            chat_id          UInt64,
-            updated_at       DateTime DEFAULT now(),
-            responsible_dept String   DEFAULT ''
-        ) ENGINE = ReplacingMergeTree(updated_at)
-        ORDER BY chat_id
-    """)
+# ---------------------------------------------------------------------------
+# Права доступа по группам Authentik
+# ---------------------------------------------------------------------------
+
+def get_permissions(user: dict) -> dict:
+    groups = user.get("groups", [])
+    if "communication-managers" in groups:
+        return {
+            "editable": ["source_type", "category", "subcategory", "result",
+                         "comment", "responsible_dept"],
+            "role": "manager",
+        }
+    # support + fallback
+    return {
+        "editable": ["source_type", "comment"],
+        "role": "support",
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -243,6 +260,7 @@ def api_log(
                e.result,
                ifNull(a.resolution_status, ''))                                    AS result,
             ifNull(e.comment, '')                                                  AS comment,
+            ifNull(t.responsible_dept, '')                                         AS responsible_dept,
             multiIf(d.source='jivo','Чат',d.source='site_pm','ЛС',d.source)       AS channel
         FROM dialogs d
         JOIN (
@@ -253,6 +271,7 @@ def api_log(
         ) r ON d.chat_id = r.chat_id
         LEFT JOIN dialog_analysis a ON d.chat_id = a.chat_id
         LEFT JOIN (SELECT * FROM support_log_edits FINAL) e ON d.chat_id = e.chat_id
+        LEFT JOIN (SELECT * FROM day_tracker_edits FINAL) t ON d.chat_id = t.chat_id
         WHERE {where}
         ORDER BY r.ts DESC
         LIMIT {PER_PAGE} OFFSET {offset}
@@ -376,13 +395,14 @@ def api_edit_manual(row_id: int, payload: ManualEditPayload):
 
 
 class EditPayload(BaseModel):
-    organizer:   Optional[str] = ""
-    responsible: Optional[str] = ""
-    result:      Optional[str] = ""
-    comment:     Optional[str] = ""
-    source_type: Optional[str] = ""
-    category:    Optional[str] = ""
-    subcategory: Optional[str] = ""
+    organizer:        Optional[str] = ""
+    responsible:      Optional[str] = ""
+    result:           Optional[str] = ""
+    comment:          Optional[str] = ""
+    source_type:      Optional[str] = ""
+    category:         Optional[str] = ""
+    subcategory:      Optional[str] = ""
+    responsible_dept: Optional[str] = ""
 
 
 @router.post("/api/log/{chat_id}")
@@ -403,6 +423,15 @@ def api_edit(chat_id: int, payload: EditPayload):
         "FORMAT JSONEachRow",
         data=row.encode("utf-8"),
     )
+    if payload.responsible_dept is not None:
+        dept_row = json.dumps({
+            "chat_id":          chat_id,
+            "responsible_dept": payload.responsible_dept or "",
+        }, ensure_ascii=False)
+        ch_execute(
+            "INSERT INTO day_tracker_edits (chat_id, responsible_dept) FORMAT JSONEachRow",
+            data=dept_row.encode("utf-8"),
+        )
     return JSONResponse({"ok": True})
 
 
@@ -412,7 +441,18 @@ def api_edit(chat_id: int, payload: EditPayload):
 
 @router.get("/log", response_class=HTMLResponse)
 def log_page(user: dict = Depends(require_user)):
-    return _HTML.replace("%%USER%%", user.get("name") or user.get("username", ""))
+    perms = get_permissions(user)
+    return (
+        _HTML
+        .replace("%%USER%%",  user.get("name") or user.get("username", ""))
+        .replace("%%PERMS%%", json.dumps(perms, ensure_ascii=False))
+    )
+
+
+@router.get("/day-tracker", response_class=HTMLResponse)
+def day_tracker_redirect():
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse("/log", status_code=302)
 
 
 _HTML = """<!DOCTYPE html>
@@ -520,6 +560,17 @@ tbody td:last-child { border-right: none; }
 /* Channel colors */
 .ch-chat { color: #1a73e8; }
 .ch-ls   { color: #0f9d58; }
+
+/* Ответственный отдел */
+thead th.col-dept { background: #eef2ff; color: #3730a3; }
+tbody td.col-dept { background: #f8f9ff; }
+tbody tr:hover td.col-dept { background: #eef2ff; }
+.dept-badge {
+  display: inline-block; padding: 2px 8px; border-radius: 10px;
+  font-size: 11px; font-weight: 600; white-space: nowrap;
+  background: #e0e7ff; color: #3730a3;
+}
+.select-dept select { border-color: #818cf8 !important; background: #eef2ff !important; }
 
 /* Editable cells */
 .editable {
@@ -732,12 +783,13 @@ tr.dialog-row td { padding: 0 !important; background: #f8f9fa; border-bottom: 2p
         <th>Причина обращения</th>
         <th>Результат</th>
         <th>Комментарий</th>
+        <th class="col-dept">Отв. отдел</th>
         <th>Канал</th>
         <th>№ обращения</th>
       </tr>
     </thead>
     <tbody id="tbody">
-      <tr><td colspan="14" class="no-data"><span class="spinner"></span>Загрузка...</td></tr>
+      <tr><td colspan="15" class="no-data"><span class="spinner"></span>Загрузка...</td></tr>
     </tbody>
   </table>
 </div>
@@ -806,7 +858,7 @@ async function load(resetPage = true) {
   });
 
   const tbody = document.getElementById('tbody');
-  tbody.innerHTML = '<tr><td colspan="14" class="no-data"><span class="spinner"></span>Загрузка...</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="15" class="no-data"><span class="spinner"></span>Загрузка...</td></tr>';
   document.getElementById('count').textContent = '';
   document.getElementById('pagination').innerHTML = '';
 
@@ -857,10 +909,34 @@ function renderPagination(page, pages, total) {
   el.innerHTML = btns.join('');
 }
 
+function canEdit(field) { return PERMS.editable.includes(field); }
+
+function selCell(field, value) {
+  if (canEdit(field)) {
+    return `<div class="select-cell" data-field="${field}" data-value="${esc(value)}" onclick="openSelect(this)">${esc(value) || '<span style=color:#bbb>—</span>'}</div>`;
+  }
+  return `<span>${esc(value) || '<span style="color:#bbb">—</span>'}</span>`;
+}
+
+function editCell(field, value, placeholder) {
+  if (canEdit(field)) {
+    return `<div class="editable" contenteditable="true" data-field="${field}" data-orig="${esc(value)}" data-placeholder="${placeholder}">${esc(value)}</div>`;
+  }
+  return `<span>${esc(value)}</span>`;
+}
+
+function deptCell(value) {
+  const inner = value ? `<span class="dept-badge">${esc(value)}</span>` : '<span style="color:#bbb">—</span>';
+  if (canEdit('responsible_dept')) {
+    return `<div class="select-cell select-dept" data-field="responsible_dept" data-value="${esc(value)}" onclick="openSelect(this)">${inner}</div>`;
+  }
+  return inner;
+}
+
 function render(rows) {
   const tbody = document.getElementById('tbody');
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="14" class="no-data">Нет данных за выбранный период</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="15" class="no-data">Нет данных за выбранный период</td></tr>';
     return;
   }
 
@@ -870,8 +946,9 @@ function render(rows) {
     const chClass = r.channel === 'Чат' ? 'ch-chat' : r.channel === 'ЛС' ? 'ch-ls' : '';
     const bc = badgeClass(r.result);
 
-    const resultHtml = isManual
-      ? `<div class="select-cell" data-field="result" data-value="${esc(r.result)}" onclick="openSelect(this)">${esc(r.result) || '<span style=color:#bbb>—</span>'}</div>`
+    // Результат: manual — всегда select; manager — select; support — badge
+    const resultHtml = isManual || canEdit('result')
+      ? `<div class="select-cell" data-field="result" data-value="${esc(r.result)}" onclick="openSelect(this)">${bc ? `<span class="badge ${bc}">${esc(r.result)}</span>` : (esc(r.result) || '<span style=color:#bbb>—</span>')}</div>`
       : (bc ? `<span class="badge ${bc}">${esc(r.result)}</span>` : (r.result ? esc(r.result) : '<span style="color:#bbb">—</span>'));
 
     const channelHtml = isManual
@@ -881,19 +958,11 @@ function render(rows) {
     const dateHtml = isManual
       ? `<button class="del-btn" onclick="deleteManualRow(this,'${rowKey}')" title="Удалить строку">×</button><div class="editable" contenteditable="true" data-field="date" data-orig="${esc(r.date)}" data-placeholder="ГГГГ-ММ-ДД">${esc(r.date)}</div>`
       : `<span class="expand-btn" onclick="toggleDialog(event,'${rowKey}')">▶</span>${esc(r.date)}`;
-    const timeHtml = isManual
-      ? `<div class="editable" contenteditable="true" data-field="time" data-orig="${esc(r.time)}" data-placeholder="ЧЧ:ММ">${esc(r.time)}</div>`
-      : esc(r.time);
-    const operatorHtml = isManual
-      ? `<div class="editable" contenteditable="true" data-field="operator" data-orig="${esc(r.operator)}" data-placeholder="Оператор">${esc(r.operator)}</div>`
-      : esc(r.operator);
-    const authorHtml = isManual
-      ? `<div class="editable" contenteditable="true" data-field="author" data-orig="${esc(r.author)}" data-placeholder="Автор">${esc(r.author)}</div>`
-      : esc(r.author);
-    const appealHtml = isManual
-      ? `<div class="editable" contenteditable="true" data-field="appeal_type" data-orig="${esc(r.appeal_type)}" data-placeholder="Тип">${esc(r.appeal_type)}</div>`
-      : esc(r.appeal_type);
-    const summaryHtml = isManual
+    const timeHtml     = isManual ? `<div class="editable" contenteditable="true" data-field="time"     data-orig="${esc(r.time)}"     data-placeholder="ЧЧ:ММ">${esc(r.time)}</div>`     : esc(r.time);
+    const operatorHtml = isManual ? `<div class="editable" contenteditable="true" data-field="operator" data-orig="${esc(r.operator)}" data-placeholder="Оператор">${esc(r.operator)}</div>` : esc(r.operator);
+    const authorHtml   = isManual ? `<div class="editable" contenteditable="true" data-field="author"   data-orig="${esc(r.author)}"   data-placeholder="Автор">${esc(r.author)}</div>`     : esc(r.author);
+    const appealHtml   = isManual ? `<div class="editable" contenteditable="true" data-field="appeal_type" data-orig="${esc(r.appeal_type)}" data-placeholder="Тип">${esc(r.appeal_type)}</div>` : esc(r.appeal_type);
+    const summaryHtml  = isManual
       ? `<div class="editable" contenteditable="true" data-field="problem_summary" data-orig="${esc(r.problem_summary)}" data-placeholder="Суть обращения">${esc(r.problem_summary)}</div>`
       : `<div class="summary-text" onclick="this.classList.toggle('expanded')">${esc(r.problem_summary)}</div>`;
 
@@ -901,15 +970,16 @@ function render(rows) {
       <td class="col-date">${dateHtml}</td>
       <td class="col-time">${timeHtml}</td>
       <td>${operatorHtml}</td>
-      <td><div class="select-cell" data-field="source_type" data-value="${esc(r.source_type)}" onclick="openSelect(this)">${esc(r.source_type) || '<span style=color:#bbb>—</span>'}</div></td>
+      <td>${isManual ? selCell('source_type', r.source_type) : selCell('source_type', r.source_type)}</td>
       <td class="col-author" title="${esc(r.author)}">${authorHtml}</td>
       <td class="col-login">${esc(extractLogin(r.author, r.source_type))}</td>
       <td>${appealHtml}</td>
-      <td><div class="select-cell" data-field="category"    data-value="${esc(r.category)}"    onclick="openSelect(this)">${esc(r.category)    || '<span style=color:#bbb>—</span>'}</div></td>
-      <td><div class="select-cell" data-field="subcategory" data-value="${esc(r.subcategory)}" onclick="openSelect(this)">${esc(r.subcategory) || '<span style=color:#bbb>—</span>'}</div></td>
+      <td>${isManual ? selCell('category', r.category)    : selCell('category', r.category)}</td>
+      <td>${isManual ? selCell('subcategory', r.subcategory) : selCell('subcategory', r.subcategory)}</td>
       <td class="col-summary">${summaryHtml}</td>
       <td>${resultHtml}</td>
-      <td><div class="editable" contenteditable="true" data-field="comment" data-orig="${esc(r.comment)}" data-placeholder="Добавить...">${esc(r.comment)}</div></td>
+      <td>${editCell('comment', r.comment, 'Добавить...')}</td>
+      <td class="col-dept">${isManual ? '<span style="color:#bbb">—</span>' : deptCell(r.responsible_dept || '')}</td>
       <td class="col-channel ${chClass}">${channelHtml}</td>
       <td class="col-login" style="color:#aaa">${isManual ? '' : esc(String(r.chat_id))}</td>
     </tr>`;
@@ -1002,8 +1072,13 @@ async function saveRow(row, feedbackEl) {
   }
 }
 
+// ── Права доступа (подставляются сервером) ─────────────────────────────────
+const PERMS = %%PERMS%%;
+
 // ── Карта категорий / подкатегорий ─────────────────────────────────────────
 const SOURCE_TYPES = ['Клиент', 'ПВЗ', 'Сотрудник', 'Жалоба', 'Заявка'];
+
+const DEPTS = ['Склад','ОКК','ИТ','Продукт','Маркетинг','Бухгалтерия','Юрист'];
 
 const CAT_MAP = {
   'Заказ и доставка':      ['Статус заказа / задержка','Заказ не найден / потерян','Статус не обновился','Объединение / формирование посылки','Возврат товара (логистика)'],
@@ -1040,6 +1115,8 @@ function openSelect(cell) {
     options = ['Решено', 'Не решено', 'Частично', 'Эскалация'];
   } else if (field === 'channel') {
     options = ['Чат', 'ЛС', 'Email', 'Телефон', 'Другой'];
+  } else if (field === 'responsible_dept') {
+    options = DEPTS;
   }
 
   const sel = document.createElement('select');
@@ -1053,9 +1130,11 @@ function openSelect(cell) {
   async function apply() {
     const val = sel.value;
     cell.dataset.value = val;
-    cell.innerHTML = val
-      ? esc(val)
-      : '<span style="color:#bbb">—</span>';
+    if (field === 'responsible_dept') {
+      cell.innerHTML = val ? `<span class="dept-badge">${esc(val)}</span>` : '<span style="color:#bbb">—</span>';
+    } else {
+      cell.innerHTML = val ? esc(val) : '<span style="color:#bbb">—</span>';
+    }
     cell.onclick = () => openSelect(cell); // вернуть обработчик
 
     // Если сменили категорию — сбрасываем подкатегорию
@@ -1075,11 +1154,10 @@ function openSelect(cell) {
 }
 
 // ── Ресайз столбцов ────────────────────────────────────────────────────────
-const COL_WIDTHS_KEY = 'log_col_widths_v1';
+const COL_WIDTHS_KEY = 'log_col_widths_v2';
 
-// Дефолтные ширины по порядку столбцов (px)
-// Дата, Время, Оператор, Тип автора, Автор, Логин, Тип, Категория, Подкатегория, Причина обращения, Результат, Комментарий, Канал, № обращения
-const DEFAULT_COL_WIDTHS = [90, 55, 90, 90, 100, 110, 90, 120, 140, 340, 90, 140, 55, 90];
+// Дата, Время, Оператор, Тип автора, Автор, Логин, Тип, Категория, Подкатегория, Причина обращения, Результат, Комментарий, Отв.отдел, Канал, № обращения
+const DEFAULT_COL_WIDTHS = [90, 55, 90, 90, 100, 110, 90, 120, 140, 340, 90, 140, 110, 55, 90];
 
 function initResizableColumns() {
   const ths = [...document.querySelectorAll('thead th')];
