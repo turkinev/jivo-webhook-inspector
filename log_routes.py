@@ -18,9 +18,10 @@ import urllib.request
 from datetime import date, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
+from auth import require_user
 
 router = APIRouter()
 
@@ -410,8 +411,8 @@ def api_edit(chat_id: int, payload: EditPayload):
 # ---------------------------------------------------------------------------
 
 @router.get("/log", response_class=HTMLResponse)
-def log_page():
-    return _HTML
+def log_page(user: dict = Depends(require_user)):
+    return _HTML.replace("%%USER%%", user.get("name") or user.get("username", ""))
 
 
 _HTML = """<!DOCTYPE html>
@@ -709,6 +710,10 @@ tr.dialog-row td { padding: 0 !important; background: #f8f9fa; border-bottom: 2p
   <button class="btn" onclick="load()">Применить</button>
   <button class="btn btn-green" id="btn_add" onclick="addManualRow()" title="Добавить строку вручную">+ Строка</button>
   <span class="count" id="count"></span>
+  <div style="margin-left:auto;display:flex;align-items:center;gap:10px;flex-shrink:0">
+    <span style="font-size:12px;color:#555">%%USER%%</span>
+    <a href="/auth/logout" style="font-size:12px;color:#1a73e8;text-decoration:none;white-space:nowrap">Выйти</a>
+  </div>
 </div>
 
 <div class="wrap">
@@ -1418,8 +1423,8 @@ def api_day_tracker_edit(chat_id: int, payload: DayTrackerEdit):
 
 
 @router.get("/day-tracker", response_class=HTMLResponse)
-def day_tracker_page():
-    return _DAY_HTML
+def day_tracker_page(user: dict = Depends(require_user)):
+    return _DAY_HTML.replace("%%USER%%", user.get("name") or user.get("username", ""))
 
 
 _DAY_HTML = """<!DOCTYPE html>
@@ -1683,6 +1688,10 @@ tbody td:last-child { border-right: none; }
   </div>
   <button class="btn" onclick="load()">Применить</button>
   <span class="count" id="count"></span>
+  <div style="margin-left:auto;display:flex;align-items:center;gap:10px;flex-shrink:0">
+    <span style="font-size:12px;color:#555">%%USER%%</span>
+    <a href="/auth/logout" style="font-size:12px;color:#1a73e8;text-decoration:none;white-space:nowrap">Выйти</a>
+  </div>
 </div>
 
 <div class="wrap">

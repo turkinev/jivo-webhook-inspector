@@ -7,10 +7,11 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import FastAPI, Request, HTTPException, BackgroundTasks
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, Response, RedirectResponse
 
 from ai_processor import analyze_and_save
 from log_routes import router as log_router, ensure_table
+import auth as auth_module
 
 logging.basicConfig(
     level=logging.INFO,
@@ -22,13 +23,90 @@ app = FastAPI(title="Dialog Analytics Webhook")
 app.include_router(log_router)
 
 
+# ---------------------------------------------------------------------------
+# Auth — обработчик редиректа на Authentik
+# ---------------------------------------------------------------------------
+
+@app.exception_handler(auth_module.LoginRequired)
+async def login_required_handler(request: Request, exc: auth_module.LoginRequired):
+    authorize_url, state = auth_module.build_authorize_url(exc.next_url)
+    resp = RedirectResponse(authorize_url, status_code=302)
+    resp.set_cookie("ji_state", state,         max_age=300, httponly=True, samesite="lax")
+    resp.set_cookie("ji_next",  exc.next_url,  max_age=300, httponly=True, samesite="lax")
+    return resp
+
+
+@app.get("/auth/login")
+async def auth_login(request: Request):
+    next_url = request.query_params.get("next", "/log")
+    authorize_url, state = auth_module.build_authorize_url(next_url)
+    resp = RedirectResponse(authorize_url, status_code=302)
+    resp.set_cookie("ji_state", state,    max_age=300, httponly=True, samesite="lax")
+    resp.set_cookie("ji_next",  next_url, max_age=300, httponly=True, samesite="lax")
+    return resp
+
+
+@app.get("/auth/callback")
+async def auth_callback(request: Request):
+    code  = request.query_params.get("code")
+    error = request.query_params.get("error")
+    next_url = request.cookies.get("ji_next", "/log")
+
+    if error:
+        return JSONResponse({"error": error}, status_code=400)
+    if not code:
+        return RedirectResponse("/auth/login")
+
+    loop = asyncio.get_event_loop()
+    try:
+        token_data   = await loop.run_in_executor(executor, auth_module.exchange_code, code)
+        access_token = token_data["access_token"]
+        userinfo     = await loop.run_in_executor(executor, auth_module.fetch_userinfo, access_token)
+    except Exception as e:
+        logger.error(f"[auth] callback error: {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+    session_data = {
+        "username": userinfo.get("preferred_username") or userinfo.get("sub", ""),
+        "name":     userinfo.get("name") or userinfo.get("preferred_username", ""),
+        "email":    userinfo.get("email", ""),
+        "groups":   userinfo.get("groups", []),
+    }
+    logger.info(f"[auth] login user={session_data['username']} groups={session_data['groups']}")
+
+    resp = RedirectResponse(next_url, status_code=302)
+    auth_module.set_session(resp, session_data)
+    resp.delete_cookie("ji_state")
+    resp.delete_cookie("ji_next")
+    return resp
+
+
+@app.get("/auth/logout")
+async def auth_logout():
+    resp = RedirectResponse("/auth/login", status_code=302)
+    resp.delete_cookie(auth_module.COOKIE_NAME)
+    return resp
+
+
+@app.get("/api/me")
+async def api_me(request: Request):
+    user = auth_module.get_current_user(request)
+    if not user:
+        return JSONResponse({"authenticated": False}, status_code=401)
+    return JSONResponse({"authenticated": True, **user})
+
+
+# ---------------------------------------------------------------------------
+# Startup
+# ---------------------------------------------------------------------------
+
 @app.on_event("startup")
 def on_startup():
     try:
         ensure_table()
-        logger.info("[startup] support_log_edits OK")
+        logger.info("[startup] tables OK")
     except Exception as e:
-        logger.warning(f"[startup] support_log_edits: {e}")
+        logger.warning(f"[startup] ensure_table: {e}")
 
 
 # Пул потоков для синхронных CH-вызовов (не блокируют event loop)
