@@ -1217,6 +1217,17 @@ const CAT_MAP = {
   'Не определено':         ['Служебное / внутреннее'],
 };
 
+// ── Рендер значения ячейки с нужным стилем ─────────────────────────────────
+function renderCellInner(field, val) {
+  if (!val) return '<span style="color:#bbb">—</span>';
+  if (field === 'result') {
+    const bc = badgeClass(val);
+    return bc ? `<span class="badge ${bc}">${esc(val)}</span>` : esc(val);
+  }
+  if (field === 'responsible_dept') return `<span class="dept-badge">${esc(val)}</span>`;
+  return esc(val);
+}
+
 // ── Открыть выпадающий список ──────────────────────────────────────────────
 function openSelect(cell) {
   if (cell.querySelector('select')) return; // уже открыт
@@ -1253,11 +1264,7 @@ function openSelect(cell) {
   async function apply() {
     const val = sel.value;
     cell.dataset.value = val;
-    if (field === 'responsible_dept') {
-      cell.innerHTML = val ? `<span class="dept-badge">${esc(val)}</span>` : '<span style="color:#bbb">—</span>';
-    } else {
-      cell.innerHTML = val ? esc(val) : '<span style="color:#bbb">—</span>';
-    }
+    cell.innerHTML = renderCellInner(field, val);
     cell.onclick = () => openSelect(cell); // вернуть обработчик
 
     // Если сменили категорию — сбрасываем подкатегорию
