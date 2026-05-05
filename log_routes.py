@@ -861,10 +861,50 @@ function badgeClass(result) {
   return r ? 'badge-other' : '';
 }
 
+const FILTERS_KEY = 'log_filters_v1';
+
+function saveFilters() {
+  try {
+    localStorage.setItem(FILTERS_KEY, JSON.stringify({
+      date_from:   document.getElementById('date_from').value,
+      date_to:     document.getElementById('date_to').value,
+      stype:       document.getElementById('filter_stype').value,
+      category:    document.getElementById('filter_category').value,
+      subcategory: document.getElementById('filter_subcategory').value,
+      result:      document.getElementById('filter_result').value,
+      dept:        document.getElementById('filter_dept').value,
+      operator:    document.getElementById('filter_operator').value,
+      channel:     document.getElementById('filter_channel').value,
+    }));
+  } catch(_) {}
+}
+
+function restoreFilters() {
+  try {
+    const f = JSON.parse(localStorage.getItem(FILTERS_KEY) || '{}');
+    if (!f || !Object.keys(f).length) return;
+    const set = (id, val) => { if (val) { const el = document.getElementById(id); if (el) el.value = val; } };
+    set('date_from', f.date_from);
+    set('date_to',   f.date_to);
+    set('filter_stype',       f.stype);
+    set('filter_result',      f.result);
+    set('filter_dept',        f.dept);
+    if (f.category) {
+      set('filter_category', f.category);
+      updateSubcatFilter();
+      set('filter_subcategory', f.subcategory);
+    }
+    // operator и channel — динамические, восстанавливаем через data-restore после загрузки опций
+    if (f.operator) document.getElementById('filter_operator').dataset.restore = f.operator;
+    if (f.channel)  document.getElementById('filter_channel').dataset.restore  = f.channel;
+  } catch(_) {}
+}
+
 function initFilters() {
   const sel = document.getElementById('filter_category');
   sel.innerHTML = '<option value="">Все</option>' +
     Object.keys(CAT_MAP).map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+  restoreFilters();
 }
 
 function updateSubcatFilter() {
@@ -894,6 +934,8 @@ async function load(resetPage = true) {
     page:        currentPage,
   });
 
+  saveFilters();
+
   const tbody = document.getElementById('tbody');
   tbody.innerHTML = '<tr><td colspan="15" class="no-data"><span class="spinner"></span>Загрузка...</td></tr>';
   document.getElementById('count').textContent = '';
@@ -907,14 +949,18 @@ async function load(resetPage = true) {
     // Обновляем списки операторов и каналов (только при первой загрузке / сбросе)
     if (resetPage) {
       const selOp = document.getElementById('filter_operator');
-      const curOp = selOp.value;
+      const curOp = selOp.value || selOp.dataset.restore || '';
+      delete selOp.dataset.restore;
       selOp.innerHTML = '<option value="">Все</option>' +
         data.operators.map(o => `<option value="${esc(o)}"${o===curOp?' selected':''}>${esc(o)}</option>`).join('');
+      if (curOp) selOp.value = curOp;
 
       const selCh = document.getElementById('filter_channel');
-      const curCh = selCh.value;
+      const curCh = selCh.value || selCh.dataset.restore || '';
+      delete selCh.dataset.restore;
       selCh.innerHTML = '<option value="">Все</option>' +
         (data.channels||[]).map(c => `<option value="${esc(c)}"${c===curCh?' selected':''}>${esc(c)}</option>`).join('');
+      if (curCh) selCh.value = curCh;
     }
 
     render(data.rows);
