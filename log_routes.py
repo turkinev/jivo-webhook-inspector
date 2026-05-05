@@ -512,10 +512,10 @@ html, body {
 .toolbar h1 { font-size: 15px; font-weight: 600; color: #333; margin-right: 6px; }
 .filter-group { display: flex; align-items: center; gap: 4px; }
 .filter-group label { font-size: 12px; color: #666; white-space: nowrap; }
-.toolbar input[type=date], .toolbar select {
+.toolbar input[type=date], .toolbar input[type=text], .toolbar select {
   border: 1px solid #ccc; border-radius: 5px; padding: 4px 7px;
   font-size: 12px; background: #fafafa; color: #333;
-  height: 28px;
+  height: 28px; box-sizing: border-box;
 }
 .toolbar input[type=date]:focus, .toolbar select:focus {
   outline: none; border-color: #1a73e8; background: #fff;
@@ -756,11 +756,11 @@ tr.dialog-row td { padding: 0 !important; background: #f8f9fa; border-bottom: 2p
   </div>
   <div class="filter-group">
     <label>Автор</label>
-    <input type="text" id="filter_author" placeholder="Поиск..." style="width:110px">
+    <input type="text" id="filter_author" placeholder="от 3 символов" style="width:120px">
   </div>
   <div class="filter-group">
     <label>Логин</label>
-    <input type="text" id="filter_login" placeholder="ID" style="width:80px">
+    <input type="text" id="filter_login" placeholder="от 3 символов" style="width:120px">
   </div>
   <div class="filter-group">
     <label>Канал</label>
@@ -923,6 +923,18 @@ function initFilters() {
   sel.innerHTML = '<option value="">Все</option>' +
     Object.keys(CAT_MAP).map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
   restoreFilters();
+
+  // Автопоиск по Автору и Логину от 3 символов с debounce 400ms
+  let _searchTimer = null;
+  ['filter_author', 'filter_login'].forEach(id => {
+    document.getElementById(id).addEventListener('input', function() {
+      clearTimeout(_searchTimer);
+      const val = this.value;
+      if (val.length === 0 || val.length >= 3) {
+        _searchTimer = setTimeout(() => load(), 400);
+      }
+    });
+  });
 }
 
 function updateSubcatFilter() {
@@ -1664,10 +1676,10 @@ html, body {
 .toolbar h1 { font-size: 15px; font-weight: 600; color: #333; margin-right: 6px; }
 .filter-group { display: flex; align-items: center; gap: 4px; }
 .filter-group label { font-size: 12px; color: #666; white-space: nowrap; }
-.toolbar input[type=date], .toolbar select {
+.toolbar input[type=date], .toolbar input[type=text], .toolbar select {
   border: 1px solid #ccc; border-radius: 5px; padding: 4px 7px;
   font-size: 12px; background: #fafafa; color: #333;
-  height: 28px;
+  height: 28px; box-sizing: border-box;
 }
 .toolbar input[type=date]:focus, .toolbar select:focus {
   outline: none; border-color: #1a73e8; background: #fff;
@@ -1858,11 +1870,11 @@ tbody td:last-child { border-right: none; }
   </div>
   <div class="filter-group">
     <label>Автор</label>
-    <input type="text" id="filter_author" placeholder="Поиск..." style="width:110px">
+    <input type="text" id="filter_author" placeholder="от 3 символов" style="width:120px">
   </div>
   <div class="filter-group">
     <label>Логин</label>
-    <input type="text" id="filter_login" placeholder="ID" style="width:80px">
+    <input type="text" id="filter_login" placeholder="от 3 символов" style="width:120px">
   </div>
   <div class="filter-group">
     <label>Канал</label>
