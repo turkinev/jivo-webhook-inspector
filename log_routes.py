@@ -218,6 +218,8 @@ def api_log(
         where += " AND d.source = 'site_pm'"
     elif channel == "Форма":
         where += " AND d.source = 'claim'"
+    elif channel in ("Email", "Телефон", "Другой"):
+        where += " AND 1=0"  # только ручные строки — основные диалоги не берём
     # Фильтры по вычисляемым полям (с учётом правок из support_log_edits)
     if stype:
         where += f" AND if(e.source_type!=''  , e.source_type , ifNull(a.source_type,''))  = '{q(stype)}'"
@@ -737,6 +739,9 @@ tr.dialog-row td { padding: 0 !important; background: #f8f9fa; border-bottom: 2p
       <option value="Чат">Чат (Jivo)</option>
       <option value="ЛС">ЛС (сайт)</option>
       <option value="Форма">Форма (сайт)</option>
+      <option value="Email">Email</option>
+      <option value="Телефон">Телефон</option>
+      <option value="Другой">Другой</option>
     </select>
   </div>
   <div class="filter-group">
@@ -1755,6 +1760,9 @@ tbody td:last-child { border-right: none; }
       <option value="Чат">Чат (Jivo)</option>
       <option value="ЛС">ЛС (сайт)</option>
       <option value="Форма">Форма (сайт)</option>
+      <option value="Email">Email</option>
+      <option value="Телефон">Телефон</option>
+      <option value="Другой">Другой</option>
     </select>
   </div>
   <div class="filter-group">
