@@ -304,11 +304,27 @@ def api_log(
         FORMAT JSONEachRow
     """)
 
+    # Каналы — из диалогов + из ручных строк
+    ch_sources = ch_query("""
+        SELECT multiIf(source='jivo','Чат',source='site_pm','ЛС',source='claim','Форма',source) AS channel
+        FROM dialogs
+        GROUP BY source
+        FORMAT JSONEachRow
+    """)
+    manual_channels = ch_query("""
+        SELECT DISTINCT channel FROM manual_log_entries
+        WHERE channel != '' AND channel IS NOT NULL
+        ORDER BY channel
+        FORMAT JSONEachRow
+    """)
+    channels = sorted({r["channel"] for r in ch_sources + manual_channels if r.get("channel")})
+
     manual_total = len(get_manual_rows(df, dt, operator, channel, stype, category, subcategory, result)) if page != 1 else len(manual_rows)
 
     return JSONResponse({
         "rows":      all_rows,
         "operators": [r["operator_name"] for r in operators],
+        "channels":  channels,
         "total":     total + manual_total,
         "page":      page,
         "per_page":  PER_PAGE,
@@ -734,15 +750,7 @@ tr.dialog-row td { padding: 0 !important; background: #f8f9fa; border-bottom: 2p
   </div>
   <div class="filter-group">
     <label>Канал</label>
-    <select id="filter_channel">
-      <option value="">Все</option>
-      <option value="Чат">Чат (Jivo)</option>
-      <option value="ЛС">ЛС (сайт)</option>
-      <option value="Форма">Форма (сайт)</option>
-      <option value="Email">Email</option>
-      <option value="Телефон">Телефон</option>
-      <option value="Другой">Другой</option>
-    </select>
+    <select id="filter_channel"><option value="">Все</option></select>
   </div>
   <div class="filter-group">
     <label>Тип автора</label>
@@ -896,12 +904,17 @@ async function load(resetPage = true) {
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const data = await resp.json();
 
-    // Обновляем список операторов (только при первой загрузке / сбросе)
+    // Обновляем списки операторов и каналов (только при первой загрузке / сбросе)
     if (resetPage) {
-      const sel = document.getElementById('filter_operator');
-      const cur = sel.value;
-      sel.innerHTML = '<option value="">Все</option>' +
-        data.operators.map(o => `<option value="${esc(o)}"${o===cur?' selected':''}>${esc(o)}</option>`).join('');
+      const selOp = document.getElementById('filter_operator');
+      const curOp = selOp.value;
+      selOp.innerHTML = '<option value="">Все</option>' +
+        data.operators.map(o => `<option value="${esc(o)}"${o===curOp?' selected':''}>${esc(o)}</option>`).join('');
+
+      const selCh = document.getElementById('filter_channel');
+      const curCh = selCh.value;
+      selCh.innerHTML = '<option value="">Все</option>' +
+        (data.channels||[]).map(c => `<option value="${esc(c)}"${c===curCh?' selected':''}>${esc(c)}</option>`).join('');
     }
 
     render(data.rows);
@@ -1488,9 +1501,24 @@ def api_day_tracker(
         FORMAT JSONEachRow
     """)
 
+    ch_sources = ch_query("""
+        SELECT multiIf(source='jivo','Чат',source='site_pm','ЛС',source='claim','Форма',source) AS channel
+        FROM dialogs
+        GROUP BY source
+        FORMAT JSONEachRow
+    """)
+    manual_channels = ch_query("""
+        SELECT DISTINCT channel FROM manual_log_entries
+        WHERE channel != '' AND channel IS NOT NULL
+        ORDER BY channel
+        FORMAT JSONEachRow
+    """)
+    channels = sorted({r["channel"] for r in ch_sources + manual_channels if r.get("channel")})
+
     return JSONResponse({
         "rows":      rows,
         "operators": [r["operator_name"] for r in operators],
+        "channels":  channels,
         "total":     total,
         "page":      page,
         "per_page":  PER_PAGE,
@@ -1755,15 +1783,7 @@ tbody td:last-child { border-right: none; }
   </div>
   <div class="filter-group">
     <label>Канал</label>
-    <select id="filter_channel">
-      <option value="">Все</option>
-      <option value="Чат">Чат (Jivo)</option>
-      <option value="ЛС">ЛС (сайт)</option>
-      <option value="Форма">Форма (сайт)</option>
-      <option value="Email">Email</option>
-      <option value="Телефон">Телефон</option>
-      <option value="Другой">Другой</option>
-    </select>
+    <select id="filter_channel"><option value="">Все</option></select>
   </div>
   <div class="filter-group">
     <label>Тип автора</label>
@@ -1937,10 +1957,15 @@ async function load(resetPage = true) {
     const data = await resp.json();
 
     if (resetPage) {
-      const sel = document.getElementById('filter_operator');
-      const cur = sel.value;
-      sel.innerHTML = '<option value="">Все</option>' +
-        data.operators.map(o => `<option value="${esc(o)}"${o===cur?' selected':''}>${esc(o)}</option>`).join('');
+      const selOp = document.getElementById('filter_operator');
+      const curOp = selOp.value;
+      selOp.innerHTML = '<option value="">Все</option>' +
+        data.operators.map(o => `<option value="${esc(o)}"${o===curOp?' selected':''}>${esc(o)}</option>`).join('');
+
+      const selCh = document.getElementById('filter_channel');
+      const curCh = selCh.value;
+      selCh.innerHTML = '<option value="">Все</option>' +
+        (data.channels||[]).map(c => `<option value="${esc(c)}"${c===curCh?' selected':''}>${esc(c)}</option>`).join('');
     }
 
     render(data.rows);
