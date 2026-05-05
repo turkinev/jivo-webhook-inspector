@@ -202,6 +202,8 @@ def api_log(
     subcategory: str = Query(default=""),
     result:      str = Query(default=""),
     dept:        str = Query(default=""),
+    author:      str = Query(default=""),
+    login:       str = Query(default=""),
     page:        int = Query(default=1, ge=1),
 ):
     df = date_from or str(date.today() - timedelta(days=7))
@@ -231,6 +233,10 @@ def api_log(
         where += f" AND if(e.result!='' AND e.result IS NOT NULL, e.result, ifNull(a.resolution_status,'')) = '{q(result)}'"
     if dept:
         where += f" AND ifNull(t.responsible_dept, '') = '{q(dept)}'"
+    if author:
+        where += f" AND ifNull(d.visitor_name, '') ILIKE '%{q(author)}%'"
+    if login:
+        where += f" AND toString(ifNull(d.visitor_id, 0)) = '{q(login)}'"
 
     offset = (page - 1) * PER_PAGE
 
@@ -749,6 +755,14 @@ tr.dialog-row td { padding: 0 !important; background: #f8f9fa; border-bottom: 2p
     <select id="filter_operator"><option value="">Все</option></select>
   </div>
   <div class="filter-group">
+    <label>Автор</label>
+    <input type="text" id="filter_author" placeholder="Поиск..." style="width:110px">
+  </div>
+  <div class="filter-group">
+    <label>Логин</label>
+    <input type="text" id="filter_login" placeholder="ID" style="width:80px">
+  </div>
+  <div class="filter-group">
     <label>Канал</label>
     <select id="filter_channel"><option value="">Все</option></select>
   </div>
@@ -875,6 +889,8 @@ function saveFilters() {
       dept:        document.getElementById('filter_dept').value,
       operator:    document.getElementById('filter_operator').value,
       channel:     document.getElementById('filter_channel').value,
+      author:      document.getElementById('filter_author').value,
+      login:       document.getElementById('filter_login').value,
     }));
   } catch(_) {}
 }
@@ -889,6 +905,8 @@ function restoreFilters() {
     set('filter_stype',       f.stype);
     set('filter_result',      f.result);
     set('filter_dept',        f.dept);
+    set('filter_author',      f.author);
+    set('filter_login',       f.login);
     if (f.category) {
       set('filter_category', f.category);
       updateSubcatFilter();
@@ -934,6 +952,8 @@ async function load(resetPage = true) {
     subcategory: document.getElementById('filter_subcategory').value,
     result:      document.getElementById('filter_result').value,
     dept:        document.getElementById('filter_dept').value,
+    author:      document.getElementById('filter_author').value,
+    login:       document.getElementById('filter_login').value,
     page:        currentPage,
   });
 
@@ -1462,6 +1482,8 @@ def api_day_tracker(
     subcategory: str = Query(default=""),
     result:      str = Query(default=""),
     dept:        str = Query(default=""),
+    author:      str = Query(default=""),
+    login:       str = Query(default=""),
     page:        int = Query(default=1, ge=1),
 ):
     df = date_from or str(date.today() - timedelta(days=7))
@@ -1488,6 +1510,10 @@ def api_day_tracker(
         where += f" AND if(e.result!='' AND e.result IS NOT NULL, e.result, ifNull(a.resolution_status,'')) = '{q(result)}'"
     if dept:
         where += f" AND ifNull(t.responsible_dept, '') = '{q(dept)}'"
+    if author:
+        where += f" AND ifNull(d.visitor_name, '') ILIKE '%{q(author)}%'"
+    if login:
+        where += f" AND toString(ifNull(d.visitor_id, 0)) = '{q(login)}'"
 
     offset = (page - 1) * PER_PAGE
 
@@ -1831,6 +1857,14 @@ tbody td:last-child { border-right: none; }
     <select id="filter_operator"><option value="">Все</option></select>
   </div>
   <div class="filter-group">
+    <label>Автор</label>
+    <input type="text" id="filter_author" placeholder="Поиск..." style="width:110px">
+  </div>
+  <div class="filter-group">
+    <label>Логин</label>
+    <input type="text" id="filter_login" placeholder="ID" style="width:80px">
+  </div>
+  <div class="filter-group">
     <label>Канал</label>
     <select id="filter_channel"><option value="">Все</option></select>
   </div>
@@ -1995,6 +2029,8 @@ async function load(resetPage = true) {
     subcategory: document.getElementById('filter_subcategory').value,
     result:      document.getElementById('filter_result').value,
     dept:        document.getElementById('filter_dept').value,
+    author:      document.getElementById('filter_author').value,
+    login:       document.getElementById('filter_login').value,
     page:        currentPage,
   });
 
