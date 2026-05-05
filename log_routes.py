@@ -921,11 +921,14 @@ function goPage(p) { currentPage = p; load(false); }
 async function load(resetPage = true) {
   if (resetPage) currentPage = 1;
 
+  // dr(id) — берёт value или data-restore (для динамических селектов до загрузки опций)
+  const dr = id => { const el = document.getElementById(id); return el.value || el.dataset.restore || ''; };
+
   const params = new URLSearchParams({
     date_from:   document.getElementById('date_from').value,
     date_to:     document.getElementById('date_to').value,
-    operator:    document.getElementById('filter_operator').value,
-    channel:     document.getElementById('filter_channel').value,
+    operator:    dr('filter_operator'),
+    channel:     dr('filter_channel'),
     stype:       document.getElementById('filter_stype').value,
     category:    document.getElementById('filter_category').value,
     subcategory: document.getElementById('filter_subcategory').value,
@@ -1979,11 +1982,14 @@ function goPage(p) { currentPage = p; load(false); }
 async function load(resetPage = true) {
   if (resetPage) currentPage = 1;
 
+  // dr(id) — берёт value или data-restore (для динамических селектов до загрузки опций)
+  const dr = id => { const el = document.getElementById(id); return el.value || el.dataset.restore || ''; };
+
   const params = new URLSearchParams({
     date_from:   document.getElementById('date_from').value,
     date_to:     document.getElementById('date_to').value,
-    operator:    document.getElementById('filter_operator').value,
-    channel:     document.getElementById('filter_channel').value,
+    operator:    dr('filter_operator'),
+    channel:     dr('filter_channel'),
     stype:       document.getElementById('filter_stype').value,
     category:    document.getElementById('filter_category').value,
     subcategory: document.getElementById('filter_subcategory').value,
