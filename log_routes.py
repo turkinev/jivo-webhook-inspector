@@ -407,7 +407,7 @@ class EditPayload(BaseModel):
     source_type:      Optional[str] = ""
     category:         Optional[str] = ""
     subcategory:      Optional[str] = ""
-    responsible_dept: Optional[str] = ""
+    responsible_dept: Optional[str] = None   # None = поле не пришло → не трогаем day_tracker_edits
 
 
 @router.post("/api/log/{chat_id}")
