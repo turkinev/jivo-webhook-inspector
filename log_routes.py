@@ -201,6 +201,7 @@ def api_log(
     category:    str = Query(default=""),
     subcategory: str = Query(default=""),
     result:      str = Query(default=""),
+    dept:        str = Query(default=""),
     page:        int = Query(default=1, ge=1),
 ):
     df = date_from or str(date.today() - timedelta(days=7))
@@ -226,6 +227,8 @@ def api_log(
         where += f" AND if(e.subcategory!=''  , e.subcategory , ifNull(a.subcategory,''))  = '{q(subcategory)}'"
     if result:
         where += f" AND if(e.result!='' AND e.result IS NOT NULL, e.result, ifNull(a.resolution_status,'')) = '{q(result)}'"
+    if dept:
+        where += f" AND ifNull(t.responsible_dept, '') = '{q(dept)}'"
 
     offset = (page - 1) * PER_PAGE
 
@@ -765,6 +768,19 @@ tr.dialog-row td { padding: 0 !important; background: #f8f9fa; border-bottom: 2p
       <option value="Эскалация">Эскалация</option>
     </select>
   </div>
+  <div class="filter-group">
+    <label>Отдел</label>
+    <select id="filter_dept">
+      <option value="">Все</option>
+      <option value="Склад">Склад</option>
+      <option value="ОКК">ОКК</option>
+      <option value="ИТ">ИТ</option>
+      <option value="Продукт">Продукт</option>
+      <option value="Маркетинг">Маркетинг</option>
+      <option value="Бухгалтерия">Бухгалтерия</option>
+      <option value="Юрист">Юрист</option>
+    </select>
+  </div>
   <button class="btn" onclick="load()">Применить</button>
   <button class="btn btn-green" id="btn_add" onclick="addManualRow()" title="Добавить строку вручную">+ Строка</button>
   <span class="count" id="count"></span>
@@ -861,6 +877,7 @@ async function load(resetPage = true) {
     category:    document.getElementById('filter_category').value,
     subcategory: document.getElementById('filter_subcategory').value,
     result:      document.getElementById('filter_result').value,
+    dept:        document.getElementById('filter_dept').value,
     page:        currentPage,
   });
 
