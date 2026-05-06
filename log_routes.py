@@ -87,7 +87,7 @@ def ensure_table():
         ) ENGINE = ReplacingMergeTree(updated_at)
         ORDER BY chat_id
     """)
-    for col in ["source_type", "category", "subcategory"]:
+    for col in ["source_type", "category", "subcategory", "comment_manager"]:
         try:
             ch_execute(f"ALTER TABLE support_log_edits ADD COLUMN IF NOT EXISTS {col} String DEFAULT ''")
         except Exception:
@@ -179,7 +179,7 @@ def get_permissions(user: dict) -> dict:
     if "communication-managers" in groups:
         return {
             "editable": ["source_type", "category", "subcategory", "result",
-                         "comment", "responsible_dept"],
+                         "comment_manager", "responsible_dept"],
             "role": "manager",
         }
     return {
@@ -279,6 +279,7 @@ def api_log(
                e.result,
                ifNull(a.resolution_status, ''))                                    AS result,
             ifNull(e.comment, '')                                                  AS comment,
+            ifNull(e.comment_manager, '')                                          AS comment_manager,
             ifNull(t.responsible_dept, '')                                         AS responsible_dept,
             multiIf(d.source='jivo','Чат',d.source='site_pm','ЛС',d.source='claim','Форма',d.source) AS channel
         FROM dialogs d
@@ -434,6 +435,7 @@ class EditPayload(BaseModel):
     responsible:      Optional[str] = ""
     result:           Optional[str] = ""
     comment:          Optional[str] = ""
+    comment_manager:  Optional[str] = ""
     source_type:      Optional[str] = ""
     category:         Optional[str] = ""
     subcategory:      Optional[str] = ""
@@ -443,18 +445,19 @@ class EditPayload(BaseModel):
 @router.post("/api/log/{chat_id}")
 def api_edit(chat_id: int, payload: EditPayload):
     row = json.dumps({
-        "chat_id":     chat_id,
-        "organizer":   payload.organizer   or "",
-        "responsible": payload.responsible or "",
-        "result":      payload.result      or "",
-        "comment":     payload.comment     or "",
-        "source_type": payload.source_type or "",
-        "category":    payload.category    or "",
-        "subcategory": payload.subcategory or "",
+        "chat_id":          chat_id,
+        "organizer":        payload.organizer        or "",
+        "responsible":      payload.responsible      or "",
+        "result":           payload.result           or "",
+        "comment":          payload.comment          or "",
+        "comment_manager":  payload.comment_manager  or "",
+        "source_type":      payload.source_type      or "",
+        "category":         payload.category         or "",
+        "subcategory":      payload.subcategory      or "",
     }, ensure_ascii=False)
     ch_execute(
         "INSERT INTO support_log_edits "
-        "(chat_id, organizer, responsible, result, comment, source_type, category, subcategory) "
+        "(chat_id, organizer, responsible, result, comment, comment_manager, source_type, category, subcategory) "
         "FORMAT JSONEachRow",
         data=row.encode("utf-8"),
     )
@@ -845,14 +848,15 @@ tr.dialog-row td { padding: 0 !important; background: #f8f9fa; border-bottom: 2p
         <th>Подкатегория</th>
         <th>Причина обращения</th>
         <th>Результат</th>
-        <th>Комментарий</th>
+        <th>Комм. поддержки</th>
+        <th>Комм. менеджера</th>
         <th class="col-dept">Отв. отдел</th>
         <th>Канал</th>
         <th>№ обращения</th>
       </tr>
     </thead>
     <tbody id="tbody">
-      <tr><td colspan="15" class="no-data"><span class="spinner"></span>Загрузка...</td></tr>
+      <tr><td colspan="16" class="no-data"><span class="spinner"></span>Загрузка...</td></tr>
     </tbody>
   </table>
 </div>
@@ -985,7 +989,7 @@ async function load(resetPage = true) {
   saveFilters();
 
   const tbody = document.getElementById('tbody');
-  tbody.innerHTML = '<tr><td colspan="15" class="no-data"><span class="spinner"></span>Загрузка...</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="16" class="no-data"><span class="spinner"></span>Загрузка...</td></tr>';
   document.getElementById('count').textContent = '';
   document.getElementById('pagination').innerHTML = '';
 
@@ -1016,7 +1020,7 @@ async function load(resetPage = true) {
     document.getElementById('count').textContent =
       `${data.total} записей, стр. ${data.page} из ${data.pages}`;
   } catch (e) {
-    tbody.innerHTML = `<tr><td colspan="14" class="no-data">Ошибка загрузки: ${e.message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="16" class="no-data">Ошибка загрузки: ${e.message}</td></tr>`;
   }
 }
 
@@ -1072,7 +1076,7 @@ function deptCell(value) {
 function render(rows) {
   const tbody = document.getElementById('tbody');
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="15" class="no-data">Нет данных за выбранный период</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="16" class="no-data">Нет данных за выбранный период</td></tr>';
     return;
   }
 
@@ -1115,6 +1119,7 @@ function render(rows) {
       <td class="col-summary">${summaryHtml}</td>
       <td>${resultHtml}</td>
       <td>${editCell('comment', r.comment, 'Добавить...')}</td>
+      <td>${editCell('comment_manager', r.comment_manager, 'Добавить...')}</td>
       <td class="col-dept">${isManual ? '<span style="color:#bbb">—</span>' : deptCell(r.responsible_dept || '')}</td>
       <td class="col-channel ${chClass}">${channelHtml}</td>
       <td class="col-login" style="color:#aaa">${isManual ? '' : esc(String(r.chat_id))}</td>
@@ -1300,7 +1305,7 @@ function openSelect(cell) {
 const COL_WIDTHS_KEY = 'log_col_widths_v2';
 
 // Дата, Время, Оператор, Тип автора, Автор, Логин, Тип, Категория, Подкатегория, Причина обращения, Результат, Комментарий, Отв.отдел, Канал, № обращения
-const DEFAULT_COL_WIDTHS = [90, 55, 90, 90, 100, 110, 90, 120, 140, 340, 90, 140, 110, 55, 90];
+const DEFAULT_COL_WIDTHS = [90, 55, 90, 90, 100, 110, 90, 120, 140, 340, 90, 140, 140, 110, 55, 90];
 
 function initResizableColumns() {
   const ths = [...document.querySelectorAll('thead th')];
@@ -1385,7 +1390,7 @@ async function toggleDialog(e, rowKey) {
     const expandTr = document.createElement('tr');
     expandTr.className = 'dialog-row';
     expandTr.dataset.dialogFor = rowKey;
-    expandTr.innerHTML = `<td colspan="14"><div class="dialog-wrap">${renderDialog(data)}</div></td>`;
+    expandTr.innerHTML = `<td colspan="16"><div class="dialog-wrap">${renderDialog(data)}</div></td>`;
     tr.after(expandTr);
     btn.textContent = '▶';
     btn.classList.add('open');
@@ -1497,6 +1502,7 @@ class DayTrackerEdit(BaseModel):
     responsible:      Optional[str] = ""
     result:           Optional[str] = ""
     comment:          Optional[str] = ""
+    comment_manager:  Optional[str] = ""
     source_type:      Optional[str] = ""
     category:         Optional[str] = ""
     subcategory:      Optional[str] = ""
@@ -1583,6 +1589,7 @@ def api_day_tracker(
                e.result, ifNull(a.resolution_status, ''))                          AS result,
             ifNull(t.responsible_dept, '')                                         AS responsible_dept,
             ifNull(e.comment, '')                                                  AS comment,
+            ifNull(e.comment_manager, '')                                          AS comment_manager,
             multiIf(d.source='jivo','Чат',d.source='site_pm','ЛС',d.source='claim','Форма',d.source) AS channel
         FROM dialogs d
         JOIN (
@@ -1637,18 +1644,19 @@ def api_day_tracker(
 def api_day_tracker_edit(chat_id: int, payload: DayTrackerEdit):
     # Общие правки → support_log_edits (те же данные что и в /log)
     log_row = json.dumps({
-        "chat_id":     chat_id,
-        "organizer":   payload.organizer   or "",
-        "responsible": payload.responsible or "",
-        "result":      payload.result      or "",
-        "comment":     payload.comment     or "",
-        "source_type": payload.source_type or "",
-        "category":    payload.category    or "",
-        "subcategory": payload.subcategory or "",
+        "chat_id":          chat_id,
+        "organizer":        payload.organizer        or "",
+        "responsible":      payload.responsible      or "",
+        "result":           payload.result           or "",
+        "comment":          payload.comment          or "",
+        "comment_manager":  payload.comment_manager  or "",
+        "source_type":      payload.source_type      or "",
+        "category":         payload.category         or "",
+        "subcategory":      payload.subcategory      or "",
     }, ensure_ascii=False)
     ch_execute(
         "INSERT INTO support_log_edits "
-        "(chat_id, organizer, responsible, result, comment, source_type, category, subcategory) "
+        "(chat_id, organizer, responsible, result, comment, comment_manager, source_type, category, subcategory) "
         "FORMAT JSONEachRow",
         data=log_row.encode("utf-8"),
     )
@@ -1958,13 +1966,14 @@ tbody td:last-child { border-right: none; }
         <th>Подкатегория</th>
         <th>Причина обращения</th>
         <th>Результат</th>
+        <th>Комм. поддержки</th>
+        <th>Комм. менеджера</th>
         <th class="col-dept">Отв. отдел</th>
-        <th>Комментарий</th>
         <th>Канал</th>
       </tr>
     </thead>
     <tbody id="tbody">
-      <tr><td colspan="14" class="no-data"><span class="spinner"></span>Загрузка...</td></tr>
+      <tr><td colspan="15" class="no-data"><span class="spinner"></span>Загрузка...</td></tr>
     </tbody>
   </table>
 </div>
@@ -2067,7 +2076,7 @@ async function load(resetPage = true) {
   });
 
   const tbody = document.getElementById('tbody');
-  tbody.innerHTML = '<tr><td colspan="14" class="no-data"><span class="spinner"></span>Загрузка...</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="15" class="no-data"><span class="spinner"></span>Загрузка...</td></tr>';
   document.getElementById('count').textContent = '';
   document.getElementById('pagination').innerHTML = '';
 
@@ -2093,7 +2102,7 @@ async function load(resetPage = true) {
     document.getElementById('count').textContent =
       `${data.total} записей, стр. ${data.page} из ${data.pages}`;
   } catch (e) {
-    tbody.innerHTML = `<tr><td colspan="14" class="no-data">Ошибка загрузки: ${e.message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="15" class="no-data">Ошибка загрузки: ${e.message}</td></tr>`;
   }
 }
 
@@ -2117,7 +2126,7 @@ function renderPagination(page, pages, total) {
 function render(rows) {
   const tbody = document.getElementById('tbody');
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="14" class="no-data">Нет данных за выбранный период</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="15" class="no-data">Нет данных за выбранный период</td></tr>';
     return;
   }
 
@@ -2142,8 +2151,9 @@ function render(rows) {
       <td><div class="select-cell" data-field="subcategory" data-value="${esc(r.subcategory)}" onclick="openSelect(this)">${esc(r.subcategory) || '<span style=color:#bbb>—</span>'}</div></td>
       <td class="col-summary"><div class="summary-text" onclick="this.classList.toggle('expanded')">${esc(r.problem_summary)}</div></td>
       <td>${resultHtml}</td>
-      <td class="col-dept"><div class="select-cell select-dept" data-field="responsible_dept" data-value="${esc(r.responsible_dept)}" onclick="openSelect(this)">${deptHtml}</div></td>
       <td><div class="editable" contenteditable="true" data-field="comment" data-orig="${esc(r.comment)}" data-placeholder="Добавить...">${esc(r.comment)}</div></td>
+      <td><div class="editable" contenteditable="true" data-field="comment_manager" data-orig="${esc(r.comment_manager||'')}" data-placeholder="Добавить...">${esc(r.comment_manager||'')}</div></td>
+      <td class="col-dept"><div class="select-cell select-dept" data-field="responsible_dept" data-value="${esc(r.responsible_dept)}" onclick="openSelect(this)">${deptHtml}</div></td>
       <td class="col-channel ${chClass}">${esc(r.channel)}</td>
     </tr>`;
   }).join('');
@@ -2262,7 +2272,7 @@ function openSelect(cell) {
 // ── Ресайз столбцов ────────────────────────────────────────────────────────
 const COL_WIDTHS_KEY = 'day_tracker_col_widths_v1';
 // Дата, Время, Оператор, Тип автора, Автор, Логин, Тип, Категория, Подкатегория, Причина, Результат, Отв.отдел, Комментарий, Канал
-const DEFAULT_COL_WIDTHS = [90, 55, 90, 90, 100, 110, 90, 120, 140, 340, 90, 120, 140, 55];
+const DEFAULT_COL_WIDTHS = [90, 55, 90, 90, 100, 110, 90, 120, 140, 340, 90, 120, 140, 140, 55];
 
 function initResizableColumns() {
   const ths = [...document.querySelectorAll('thead th')];
