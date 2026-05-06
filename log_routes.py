@@ -170,15 +170,18 @@ def get_manual_rows(df: str, dt: str, operator: str = "", channel: str = "",
 # Права доступа по группам Authentik
 # ---------------------------------------------------------------------------
 
+ALLOWED_GROUPS = {"communication-managers", "communication-support"}
+
 def get_permissions(user: dict) -> dict:
-    groups = user.get("groups", [])
+    groups = set(user.get("groups", []))
+    if not groups & ALLOWED_GROUPS:
+        return None  # нет доступа
     if "communication-managers" in groups:
         return {
             "editable": ["source_type", "category", "subcategory", "result",
                          "comment", "responsible_dept"],
             "role": "manager",
         }
-    # support + fallback
     return {
         "editable": ["source_type", "comment"],
         "role": "support",
@@ -474,6 +477,16 @@ def api_edit(chat_id: int, payload: EditPayload):
 @router.get("/log", response_class=HTMLResponse)
 def log_page(user: dict = Depends(require_user)):
     perms = get_permissions(user)
+    if perms is None:
+        from fastapi.responses import HTMLResponse as _HR
+        name = user.get("name") or user.get("username", "")
+        return _HR(
+            f"<h2 style='font-family:sans-serif;margin:60px auto;text-align:center'>"
+            f"403 — Доступ запрещён<br>"
+            f"<span style='font-size:14px;color:#888'>Пользователь <b>{name}</b> не состоит "
+            f"в группах communication-managers или communication-support</span></h2>",
+            status_code=403,
+        )
     return (
         _HTML
         .replace("%%USER%%",  user.get("name") or user.get("username", ""))
