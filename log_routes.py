@@ -1837,7 +1837,7 @@ async function setRating(dot, n) {
   const body   = {};
   body[field]  = newVal;
   try {
-    await fetch(\`/log/api/log/\${chatId}\`, {
+    await fetch(`/log/api/log/${chatId}`, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(body),
