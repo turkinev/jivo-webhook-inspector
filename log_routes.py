@@ -1068,6 +1068,13 @@ mark.hl { background: #ffe566; color: inherit; border-radius: 2px; padding: 0 1p
 
 /* Manual rows */
 tr[data-manual="1"] td:first-child { border-left: 2px solid #d0c8a0; }
+tr[data-manual="1"] .editable[data-field="problem_summary"] {
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+  overflow: hidden; cursor: text; white-space: normal;
+}
+tr[data-manual="1"] .editable[data-field="problem_summary"]:focus {
+  display: block; -webkit-line-clamp: unset; overflow: visible;
+}
 
 .btn-green { background: #0f9d58; }
 .btn-green:hover { background: #0b7a43; }
@@ -1429,7 +1436,7 @@ async function load(resetPage = true) {
     applyHiddenCols();
     renderPagination(data.page, data.pages, data.total);
     document.getElementById('count').textContent =
-      `${data.total} записей, стр. ${data.page} из ${data.pages}`;
+      `${data.total} записей`;
   } catch (e) {
     tbody.innerHTML = `<tr><td colspan="16" class="no-data">Ошибка загрузки: ${e.message}</td></tr>`;
   }
@@ -2780,7 +2787,7 @@ async function load(resetPage = true) {
     applyHiddenCols();
     renderPagination(data.page, data.pages, data.total);
     document.getElementById('count').textContent =
-      `${data.total} записей, стр. ${data.page} из ${data.pages}`;
+      `${data.total} записей`;
   } catch (e) {
     tbody.innerHTML = `<tr><td colspan="15" class="no-data">Ошибка загрузки: ${e.message}</td></tr>`;
   }
