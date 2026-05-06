@@ -1240,7 +1240,23 @@ document.getElementById('date_to').value   = fmt(today);
 let currentPage = 1;
 
 function fmt(d) {
-  return d.toISOString().split('T')[0];
+  return d.toISOString().split('T')[0];  // YYYY-MM-DD для input[type=date]
+}
+
+// YYYY-MM-DD → ДД.ММ.ГГГГ для отображения
+function fmtDate(s) {
+  if (!s) return '';
+  const p = s.split('-');
+  if (p.length === 3) return p[2] + '.' + p[1] + '.' + p[0];
+  return s;
+}
+
+// ДД.ММ.ГГГГ → YYYY-MM-DD для сохранения
+function parseDate(s) {
+  if (!s) return '';
+  const p = s.split('.');
+  if (p.length === 3 && p[2].length === 4) return p[2] + '-' + p[1] + '-' + p[0];
+  return s; // уже YYYY-MM-DD или непонятный формат — оставляем как есть
 }
 
 function esc(s) {
@@ -1524,8 +1540,8 @@ function render(rows) {
       : esc(r.channel);
 
     const dateHtml = isManual
-      ? `<button class="del-btn" onclick="deleteManualRow(this,'${rowKey}')" title="Удалить строку">×</button><div class="editable" contenteditable="true" data-field="date" data-orig="${esc(r.date)}" data-placeholder="ГГГГ-ММ-ДД">${esc(r.date)}</div>`
-      : `<span class="expand-btn" onclick="toggleDialog(event,'${rowKey}')">▶</span>${esc(r.date)}`;
+      ? `<button class="del-btn" onclick="deleteManualRow(this,'${rowKey}')" title="Удалить строку">×</button><div class="editable" contenteditable="true" data-field="date" data-orig="${esc(r.date)}" data-placeholder="ДД.ММ.ГГГГ">${fmtDate(r.date)}</div>`
+      : `<span class="expand-btn" onclick="toggleDialog(event,'${rowKey}')">▶</span>${fmtDate(r.date)}`;
     const timeHtml     = isManual ? `<div class="editable" contenteditable="true" data-field="time"     data-orig="${esc(r.time)}"     data-placeholder="ЧЧ:ММ">${esc(r.time)}</div>`     : esc(r.time);
     const operatorHtml = isManual ? `<div class="editable" contenteditable="true" data-field="operator" data-orig="${esc(r.operator)}" data-placeholder="Оператор">${esc(r.operator)}</div>` : esc(r.operator);
     const authorHtml   = isManual ? `<div class="editable" contenteditable="true" data-field="author"   data-orig="${esc(r.author)}"   data-placeholder="Автор">${esc(r.author)}</div>`     : esc(r.author);
@@ -1625,7 +1641,9 @@ function extractLogin(author, sourceType) {
 function collectFields(row) {
   const f = {};
   row.querySelectorAll('.editable').forEach(c => {
-    f[c.dataset.field] = c.textContent.trim();
+    let val = c.textContent.trim();
+    if (c.dataset.field === 'date') val = parseDate(val); // ДД.ММ.ГГГГ → YYYY-MM-DD
+    f[c.dataset.field] = val;
   });
   row.querySelectorAll('.select-cell[data-field]').forEach(c => {
     f[c.dataset.field] = c.dataset.value || '';
@@ -1921,7 +1939,7 @@ function prependManualRow(id, dateStr, timeStr) {
   tr.dataset.id     = rowKey;
   tr.dataset.manual = '1';
   tr.innerHTML = `
-    <td class="col-date"><button class="del-btn" onclick="deleteManualRow(this,'${rowKey}')" title="Удалить строку">×</button><div class="editable" contenteditable="true" data-field="date" data-orig="${esc(today)}" data-placeholder="ГГГГ-ММ-ДД">${esc(today)}</div></td>
+    <td class="col-date"><button class="del-btn" onclick="deleteManualRow(this,'${rowKey}')" title="Удалить строку">×</button><div class="editable" contenteditable="true" data-field="date" data-orig="${esc(today)}" data-placeholder="ДД.ММ.ГГГГ">${fmtDate(today)}</div></td>
     <td class="col-time"><div class="editable" contenteditable="true" data-field="time" data-orig="${esc(nowTime)}" data-placeholder="ЧЧ:ММ">${esc(nowTime)}</div></td>
     <td><div class="editable" contenteditable="true" data-field="operator" data-orig="" data-placeholder="Оператор"></div></td>
     <td><div class="select-cell" data-field="source_type" data-value="" onclick="openSelect(this)"><span style="color:#bbb">—</span></div></td>
@@ -2572,6 +2590,13 @@ let currentPage = 1;
 
 function fmt(d) { return d.toISOString().split('T')[0]; }
 
+function fmtDate(s) {
+  if (!s) return '';
+  const p = s.split('-');
+  if (p.length === 3) return p[2] + '.' + p[1] + '.' + p[0];
+  return s;
+}
+
 function esc(s) {
   if (s === null || s === undefined) return '';
   return String(s)
@@ -2775,7 +2800,7 @@ function render(rows) {
       ? `<span class="dept-badge">${esc(r.responsible_dept)}</span>`
       : '<span style="color:#bbb">—</span>';
     return `<tr data-id="${r.chat_id}">
-      <td class="col-date">${esc(r.date)}</td>
+      <td class="col-date">${fmtDate(r.date)}</td>
       <td class="col-time">${esc(r.time)}</td>
       <td>${esc(r.operator)}</td>
       <td><div class="select-cell" data-field="source_type" data-value="${esc(r.source_type)}" onclick="openSelect(this)">${esc(r.source_type) || '<span style=color:#bbb>—</span>'}</div></td>
