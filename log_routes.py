@@ -18,7 +18,7 @@ import urllib.request
 from datetime import date, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 from auth import require_user
@@ -102,6 +102,7 @@ def ensure_table():
         ORDER BY chat_id
     """)
     ensure_manual_table()
+    ensure_col_perms_table()
 
 
 def ensure_manual_table():
@@ -171,21 +172,95 @@ def get_manual_rows(df: str, dt: str, operator: str = "", channel: str = "",
 # Права доступа по группам Authentik
 # ---------------------------------------------------------------------------
 
-ALLOWED_GROUPS = {"communication-managers", "communication-support"}
+ALLOWED_GROUPS  = {"communication-managers", "communication-support"}
+MANAGED_GROUPS  = ["communication-managers", "communication-support"]
 
-def get_permissions(user: dict) -> dict:
+# Все колонки журнала: (field_name, display_name)
+COLUMN_DEFS = [
+    ("date",            "Дата"),
+    ("time",            "Время"),
+    ("operator",        "Оператор"),
+    ("source_type",     "Тип автора"),
+    ("author",          "Автор"),
+    ("login",           "Логин"),
+    ("appeal_type",     "Тип"),
+    ("category",        "Категория"),
+    ("subcategory",     "Подкатегория"),
+    ("problem_summary", "Причина обращения"),
+    ("result",          "Результат"),
+    ("comment",         "Комм. поддержки"),
+    ("comment_manager", "Комм. менеджера"),
+    ("responsible_dept","Отв. отдел"),
+    ("channel",         "Канал"),
+    ("chat_id",         "№ обращения"),
+]
+
+# Права по умолчанию (когда БД пуста)
+_DEFAULT_COL_PERMS = {
+    "communication-managers": {
+        "date": "view", "time": "view", "operator": "view",
+        "source_type": "edit", "author": "view", "login": "view",
+        "appeal_type": "view", "category": "edit", "subcategory": "edit",
+        "problem_summary": "view", "result": "edit", "comment": "view",
+        "comment_manager": "edit", "responsible_dept": "edit",
+        "channel": "view", "chat_id": "view",
+    },
+    "communication-support": {
+        "date": "view", "time": "view", "operator": "view",
+        "source_type": "edit", "author": "view", "login": "view",
+        "appeal_type": "view", "category": "view", "subcategory": "view",
+        "problem_summary": "view", "result": "view", "comment": "edit",
+        "comment_manager": "view", "responsible_dept": "edit",
+        "channel": "view", "chat_id": "view",
+    },
+}
+
+
+def ensure_col_perms_table():
+    ch_execute("""
+        CREATE TABLE IF NOT EXISTS group_column_perms (
+            group_name   String,
+            column_name  String,
+            access       String DEFAULT 'view',
+            updated_at   DateTime DEFAULT now()
+        ) ENGINE = ReplacingMergeTree(updated_at)
+        ORDER BY (group_name, column_name)
+    """)
+
+
+def load_col_perms(group_name: str) -> dict:
+    """Возвращает {column_name: access} для группы. При пустой БД — дефолты."""
+    try:
+        rows = ch_query(f"""
+            SELECT column_name, access
+            FROM group_column_perms FINAL
+            WHERE group_name = '{group_name}'
+            FORMAT JSONEachRow
+        """)
+        if rows:
+            return {r["column_name"]: r["access"] for r in rows}
+    except Exception:
+        pass
+    return dict(_DEFAULT_COL_PERMS.get(group_name, {}))
+
+
+def get_permissions(user: dict):
     groups = set(user.get("groups", []))
     if not groups & ALLOWED_GROUPS:
         return None  # нет доступа
-    if "communication-managers" in groups:
-        return {
-            "editable": ["source_type", "category", "subcategory", "result",
-                         "comment_manager", "responsible_dept"],
-            "role": "manager",
-        }
+
+    is_manager = "communication-managers" in groups
+    group_name = "communication-managers" if is_manager else "communication-support"
+
+    col_perms = load_col_perms(group_name)
+    editable = [c for c, a in col_perms.items() if a == "edit"]
+    hidden   = [c for c, a in col_perms.items() if a == "hidden"]
+
     return {
-        "editable": ["source_type", "comment"],
-        "role": "support",
+        "editable":   editable,
+        "hidden":     hidden,
+        "role":       "manager" if is_manager else "support",
+        "is_manager": is_manager,
     }
 
 
@@ -500,6 +575,183 @@ def api_edit(chat_id: int, payload: EditPayload):
 
 
 # ---------------------------------------------------------------------------
+# Admin: права доступа по колонкам
+# ---------------------------------------------------------------------------
+
+@router.get("/api/admin/perms")
+def api_admin_perms_get(user: dict = Depends(require_user)):
+    if "communication-managers" not in set(user.get("groups", [])):
+        return JSONResponse({"error": "Forbidden"}, status_code=403)
+    result = {g: load_col_perms(g) for g in MANAGED_GROUPS}
+    return JSONResponse(result)
+
+
+@router.post("/api/admin/perms")
+async def api_admin_perms_save(request: Request, user: dict = Depends(require_user)):
+    if "communication-managers" not in set(user.get("groups", [])):
+        return JSONResponse({"error": "Forbidden"}, status_code=403)
+    payload = await request.json()
+    valid_cols  = {c for c, _ in COLUMN_DEFS}
+    valid_accs  = {"view", "edit", "hidden"}
+    rows = []
+    for group_name, cols in payload.items():
+        if group_name not in MANAGED_GROUPS:
+            continue
+        for col_name, access in cols.items():
+            if col_name not in valid_cols or access not in valid_accs:
+                continue
+            rows.append(json.dumps({
+                "group_name":  group_name,
+                "column_name": col_name,
+                "access":      access,
+            }, ensure_ascii=False))
+    if rows:
+        ch_execute(
+            "INSERT INTO group_column_perms (group_name, column_name, access) FORMAT JSONEachRow",
+            data="\n".join(rows).encode("utf-8"),
+        )
+    return JSONResponse({"ok": True})
+
+
+@router.get("/admin/perms", response_class=HTMLResponse)
+def admin_perms_page(user: dict = Depends(require_user)):
+    if "communication-managers" not in set(user.get("groups", [])):
+        from fastapi.responses import HTMLResponse as _HR
+        return _HR("<h2 style='font-family:sans-serif;margin:60px auto;text-align:center'>403 — Доступ запрещён</h2>", status_code=403)
+    col_labels   = {f: lbl for f, lbl in COLUMN_DEFS}
+    group_labels = {
+        "communication-managers": "Менеджеры",
+        "communication-support":  "Поддержка",
+    }
+    return HTMLResponse(_build_admin_html(col_labels, group_labels))
+
+
+def _build_admin_html(col_labels: dict, group_labels: dict) -> str:
+    access_opts = [("view", "Просмотр"), ("edit", "Редактировать"), ("hidden", "Скрыть")]
+
+    # Строим строки таблицы
+    rows_html = ""
+    for field, label in COLUMN_DEFS:
+        cells = f'<td class="col-label">{label}</td>'
+        for gname in MANAGED_GROUPS:
+            sel_id = f"perm_{gname}__{field}"
+            opts = "".join(
+                f'<option value="{v}">{lbl}</option>'
+                for v, lbl in access_opts
+            )
+            cells += f'<td><select id="{sel_id}" data-group="{gname}" data-col="{field}">{opts}</select></td>'
+        rows_html += f"<tr>{cells}</tr>"
+
+    group_ths = "".join(f"<th>{group_labels[g]}</th>" for g in MANAGED_GROUPS)
+
+    return f"""<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Настройка прав колонок</title>
+<style>
+* {{ box-sizing: border-box; margin: 0; padding: 0; }}
+body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+       font-size: 13px; background: #f0f2f5; color: #222; padding: 24px; }}
+h1 {{ font-size: 18px; margin-bottom: 20px; }}
+.card {{ background: #fff; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.1);
+         padding: 24px; max-width: 680px; }}
+table {{ border-collapse: collapse; width: 100%; }}
+th, td {{ padding: 8px 12px; border-bottom: 1px solid #eee; text-align: left; }}
+th {{ background: #f8f9fa; font-weight: 600; color: #555; font-size: 12px; text-transform: uppercase; }}
+td.col-label {{ font-weight: 500; color: #333; width: 200px; }}
+select {{
+  padding: 4px 8px; border: 1px solid #ddd; border-radius: 5px;
+  font-size: 12px; background: #fff; cursor: pointer; width: 150px;
+  transition: border-color .15s;
+}}
+select:focus {{ outline: none; border-color: #1a73e8; }}
+select[value="edit"]   {{ border-color: #27ae60; color: #27ae60; }}
+select[value="hidden"] {{ border-color: #e74c3c; color: #e74c3c; }}
+.btn-save {{
+  margin-top: 20px; padding: 9px 28px; background: #1a73e8; color: #fff;
+  border: none; border-radius: 6px; font-size: 14px; cursor: pointer;
+  transition: background .15s;
+}}
+.btn-save:hover {{ background: #1558b0; }}
+.btn-save:disabled {{ background: #aaa; cursor: default; }}
+.status {{ margin-top: 12px; font-size: 13px; color: #27ae60; min-height: 18px; }}
+.back {{ display: inline-block; margin-bottom: 16px; font-size: 13px;
+         color: #1a73e8; text-decoration: none; }}
+.back:hover {{ text-decoration: underline; }}
+</style>
+</head>
+<body>
+<a href="/log" class="back">← Журнал обращений</a>
+<h1>Настройка прав доступа к колонкам</h1>
+<div class="card">
+  <table>
+    <thead><tr><th>Колонка</th>{group_ths}</tr></thead>
+    <tbody>{rows_html}</tbody>
+  </table>
+  <button class="btn-save" id="btn_save" onclick="savePerms()">Сохранить</button>
+  <div class="status" id="status"></div>
+</div>
+<script>
+async function loadPerms() {{
+  const resp = await fetch('/api/admin/perms');
+  const data = await resp.json();
+  document.querySelectorAll('select[data-group]').forEach(sel => {{
+    const g = sel.dataset.group, c = sel.dataset.col;
+    if (data[g] && data[g][c]) {{
+      sel.value = data[g][c];
+      applySelectColor(sel);
+    }}
+  }});
+}}
+
+function applySelectColor(sel) {{
+  sel.style.borderColor = sel.value === 'edit' ? '#27ae60'
+                        : sel.value === 'hidden' ? '#e74c3c' : '#ddd';
+  sel.style.color = sel.value === 'edit' ? '#27ae60'
+                  : sel.value === 'hidden' ? '#e74c3c' : '#222';
+}}
+
+document.querySelectorAll('select[data-group]').forEach(sel => {{
+  sel.addEventListener('change', () => applySelectColor(sel));
+}});
+
+async function savePerms() {{
+  const btn = document.getElementById('btn_save');
+  const st  = document.getElementById('status');
+  btn.disabled = true;
+  st.textContent = '';
+
+  const payload = {{}};
+  document.querySelectorAll('select[data-group]').forEach(sel => {{
+    const g = sel.dataset.group, c = sel.dataset.col;
+    if (!payload[g]) payload[g] = {{}};
+    payload[g][c] = sel.value;
+  }});
+
+  try {{
+    const resp = await fetch('/api/admin/perms', {{
+      method: 'POST',
+      headers: {{'Content-Type': 'application/json'}},
+      body: JSON.stringify(payload),
+    }});
+    const data = await resp.json();
+    st.style.color = data.ok ? '#27ae60' : '#e74c3c';
+    st.textContent = data.ok ? '✓ Сохранено. Изменения вступят в силу при следующем входе пользователей.' : ('Ошибка: ' + JSON.stringify(data));
+  }} catch(e) {{
+    st.style.color = '#e74c3c';
+    st.textContent = 'Ошибка: ' + e.message;
+  }}
+  btn.disabled = false;
+}}
+
+loadPerms();
+</script>
+</body>
+</html>"""
+
+
+# ---------------------------------------------------------------------------
 # HTML
 # ---------------------------------------------------------------------------
 
@@ -522,10 +774,15 @@ def log_page(user: dict = Depends(require_user)):
             f"</div>",
             status_code=403,
         )
+    admin_link = (
+        '<a href="/admin/perms" style="font-size:12px;color:#e67e22;text-decoration:none;white-space:nowrap">⚙ Права</a>'
+        if perms.get("is_manager") else ""
+    )
     return (
         _HTML
-        .replace("%%USER%%",  user.get("name") or user.get("username", ""))
-        .replace("%%PERMS%%", json.dumps(perms, ensure_ascii=False))
+        .replace("%%USER%%",       user.get("name") or user.get("username", ""))
+        .replace("%%PERMS%%",      json.dumps(perms, ensure_ascii=False))
+        .replace("%%ADMIN_LINK%%", admin_link)
     )
 
 
@@ -868,6 +1125,7 @@ tr.dialog-row td { padding: 0 !important; background: #f8f9fa; border-bottom: 2p
       <input type="text" id="filter_search" placeholder="от 3 символов" style="width:160px">
     </div>
     <span style="font-size:12px;color:#555">%%USER%%</span>
+    %%ADMIN_LINK%%
     <a href="/auth/logout" style="font-size:12px;color:#1a73e8;text-decoration:none;white-space:nowrap">Выйти</a>
   </div>
 </div>
@@ -876,22 +1134,22 @@ tr.dialog-row td { padding: 0 !important; background: #f8f9fa; border-bottom: 2p
   <table>
     <thead>
       <tr>
-        <th>Дата</th>
-        <th>Время</th>
-        <th>Оператор</th>
-        <th>Тип автора</th>
-        <th>Автор</th>
-        <th>Логин</th>
-        <th>Тип</th>
-        <th>Категория</th>
-        <th>Подкатегория</th>
-        <th>Причина обращения</th>
-        <th>Результат</th>
-        <th>Комм. поддержки</th>
-        <th>Комм. менеджера</th>
-        <th class="col-dept">Отв. отдел</th>
-        <th>Канал</th>
-        <th>№ обращения</th>
+        <th data-col="date">Дата</th>
+        <th data-col="time">Время</th>
+        <th data-col="operator">Оператор</th>
+        <th data-col="source_type">Тип автора</th>
+        <th data-col="author">Автор</th>
+        <th data-col="login">Логин</th>
+        <th data-col="appeal_type">Тип</th>
+        <th data-col="category">Категория</th>
+        <th data-col="subcategory">Подкатегория</th>
+        <th data-col="problem_summary">Причина обращения</th>
+        <th data-col="result">Результат</th>
+        <th data-col="comment">Комм. поддержки</th>
+        <th data-col="comment_manager">Комм. менеджера</th>
+        <th data-col="responsible_dept" class="col-dept">Отв. отдел</th>
+        <th data-col="channel">Канал</th>
+        <th data-col="chat_id">№ обращения</th>
       </tr>
     </thead>
     <tbody id="tbody">
@@ -1062,6 +1320,7 @@ async function load(resetPage = true) {
 
     render(data.rows);
     highlightSearch((document.getElementById('filter_search') || {}).value || '');
+    applyHiddenCols();
     renderPagination(data.page, data.pages, data.total);
     document.getElementById('count').textContent =
       `${data.total} записей, стр. ${data.page} из ${data.pages}`;
@@ -1124,6 +1383,20 @@ function renderPagination(page, pages, total) {
   btns.push(`<button class="pg-btn" onclick="goPage(${page+1})" ${page===pages?'disabled':''}>›</button>`);
 
   el.innerHTML = btns.join('');
+}
+
+function applyHiddenCols() {
+  const hidden = (PERMS.hidden || []);
+  if (!hidden.length) return;
+  const allThs = [...document.querySelectorAll('thead th')];
+  hidden.forEach(function(col) {
+    const th = document.querySelector('thead th[data-col="' + col + '"]');
+    if (!th) return;
+    const idx = allThs.indexOf(th) + 1;
+    const s = document.createElement('style');
+    s.textContent = 'thead th:nth-child(' + idx + '), tbody td:nth-child(' + idx + ') { display:none !important; }';
+    document.head.appendChild(s);
+  });
 }
 
 function canEdit(field) { return PERMS.editable.includes(field); }
@@ -1810,7 +2083,17 @@ def api_day_tracker_edit(chat_id: int, payload: DayTrackerEdit):
 
 @router.get("/day-tracker", response_class=HTMLResponse)
 def day_tracker_page(user: dict = Depends(require_user)):
-    return _DAY_HTML.replace("%%USER%%", user.get("name") or user.get("username", ""))
+    perms = get_permissions(user) or {"editable": [], "hidden": [], "role": "support", "is_manager": False}
+    admin_link = (
+        '<a href="/admin/perms" style="font-size:12px;color:#e67e22;text-decoration:none;white-space:nowrap">⚙ Права</a>'
+        if perms.get("is_manager") else ""
+    )
+    return (
+        _DAY_HTML
+        .replace("%%USER%%",       user.get("name") or user.get("username", ""))
+        .replace("%%PERMS%%",      json.dumps(perms, ensure_ascii=False))
+        .replace("%%ADMIN_LINK%%", admin_link)
+    )
 
 
 _DAY_HTML = """<!DOCTYPE html>
@@ -2087,6 +2370,7 @@ mark.hl { background: #ffe566; color: inherit; border-radius: 2px; padding: 0 1p
       <label>🔍 Поиск</label>
       <input type="text" id="filter_search" placeholder="от 3 символов" style="width:160px">
     </div>
+    %%ADMIN_LINK%%
     <span style="font-size:12px;color:#555">%%USER%%</span>
     <a href="/auth/logout" style="font-size:12px;color:#1a73e8;text-decoration:none;white-space:nowrap">Выйти</a>
   </div>
@@ -2096,21 +2380,21 @@ mark.hl { background: #ffe566; color: inherit; border-radius: 2px; padding: 0 1p
   <table>
     <thead>
       <tr>
-        <th>Дата</th>
-        <th>Время</th>
-        <th>Оператор</th>
-        <th>Тип автора</th>
-        <th>Автор</th>
-        <th>Логин</th>
-        <th>Тип</th>
-        <th>Категория</th>
-        <th>Подкатегория</th>
-        <th>Причина обращения</th>
-        <th>Результат</th>
-        <th>Комм. поддержки</th>
-        <th>Комм. менеджера</th>
-        <th class="col-dept">Отв. отдел</th>
-        <th>Канал</th>
+        <th data-col="date">Дата</th>
+        <th data-col="time">Время</th>
+        <th data-col="operator">Оператор</th>
+        <th data-col="source_type">Тип автора</th>
+        <th data-col="author">Автор</th>
+        <th data-col="login">Логин</th>
+        <th data-col="appeal_type">Тип</th>
+        <th data-col="category">Категория</th>
+        <th data-col="subcategory">Подкатегория</th>
+        <th data-col="problem_summary">Причина обращения</th>
+        <th data-col="result">Результат</th>
+        <th data-col="comment">Комм. поддержки</th>
+        <th data-col="comment_manager">Комм. менеджера</th>
+        <th data-col="responsible_dept" class="col-dept">Отв. отдел</th>
+        <th data-col="channel">Канал</th>
       </tr>
     </thead>
     <tbody id="tbody">
@@ -2123,6 +2407,7 @@ mark.hl { background: #ffe566; color: inherit; border-radius: 2px; padding: 0 1p
 
 <script>
 const CURRENT_USER = "%%USER%%";
+const PERMS        = %%PERMS%%;
 const today = new Date();
 const week  = new Date(today); week.setDate(today.getDate() - 7);
 document.getElementById('date_from').value = fmt(week);
@@ -2242,6 +2527,7 @@ async function load(resetPage = true) {
 
     render(data.rows);
     highlightSearch((document.getElementById('filter_search') || {}).value || '');
+    applyHiddenCols();
     renderPagination(data.page, data.pages, data.total);
     document.getElementById('count').textContent =
       `${data.total} записей, стр. ${data.page} из ${data.pages}`;
@@ -2253,25 +2539,24 @@ async function load(resetPage = true) {
 function highlightSearch(term) {
   if (!term || term.length < 3) return;
   const tbody = document.getElementById('tbody');
-  const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const regex = new RegExp(escaped, 'gi');
+  const lower = term.toLowerCase();
 
   function walkNode(node) {
     if (node.nodeType === 3) {
       const text = node.textContent;
-      if (!regex.test(text)) { regex.lastIndex = 0; return; }
-      regex.lastIndex = 0;
+      const ltext = text.toLowerCase();
+      if (ltext.indexOf(lower) === -1) return;
       const frag = document.createDocumentFragment();
-      let last = 0, m;
-      while ((m = regex.exec(text)) !== null) {
-        if (m.index > last) frag.appendChild(document.createTextNode(text.slice(last, m.index)));
+      let pos = 0, i;
+      while ((i = ltext.indexOf(lower, pos)) !== -1) {
+        if (i > pos) frag.appendChild(document.createTextNode(text.slice(pos, i)));
         const mark = document.createElement('mark');
         mark.className = 'hl';
-        mark.textContent = m[0];
+        mark.textContent = text.slice(i, i + term.length);
         frag.appendChild(mark);
-        last = m.index + m[0].length;
+        pos = i + term.length;
       }
-      if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+      if (pos < text.length) frag.appendChild(document.createTextNode(text.slice(pos)));
       node.parentNode.replaceChild(frag, node);
     } else if (node.nodeType === 1) {
       if (node.contentEditable === 'true' || node.tagName === 'SELECT' || node.tagName === 'INPUT') return;
@@ -2280,6 +2565,20 @@ function highlightSearch(term) {
   }
 
   tbody.querySelectorAll('td').forEach(td => walkNode(td));
+}
+
+function applyHiddenCols() {
+  const hidden = (PERMS.hidden || []);
+  if (!hidden.length) return;
+  const allThs = [...document.querySelectorAll('thead th')];
+  hidden.forEach(function(col) {
+    const th = document.querySelector('thead th[data-col="' + col + '"]');
+    if (!th) return;
+    const idx = allThs.indexOf(th) + 1;
+    const s = document.createElement('style');
+    s.textContent = 'thead th:nth-child(' + idx + '), tbody td:nth-child(' + idx + ') { display:none !important; }';
+    document.head.appendChild(s);
+  });
 }
 
 function renderPagination(page, pages, total) {
