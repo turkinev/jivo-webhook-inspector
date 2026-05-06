@@ -1039,9 +1039,7 @@ mark.hl { background: #ffe566; color: inherit; border-radius: 2px; padding: 0 1p
 .no-data { text-align: center; padding: 60px 20px; color: #aaa; font-size: 14px; }
 
 /* Manual rows */
-tr[data-manual="1"] { background: #fffdf0; }
-tr[data-manual="1"]:hover { background: #fff8d6; }
-tr[data-manual="1"] td:first-child { border-left: 3px solid #f59e0b; }
+tr[data-manual="1"] td:first-child { border-left: 2px solid #d0c8a0; }
 
 .btn-green { background: #0f9d58; }
 .btn-green:hover { background: #0b7a43; }
@@ -1171,7 +1169,6 @@ tr.dialog-row td { padding: 0 !important; background: #f8f9fa; border-bottom: 2p
       <option value="">Все</option>
       <option value="Решено">Решено</option>
       <option value="Не решено">Не решено</option>
-      <option value="Частично">Частично</option>
       <option value="Эскалация">Эскалация</option>
     </select>
   </div>
@@ -1717,7 +1714,7 @@ function openSelect(cell) {
     const cat = catCell ? catCell.dataset.value : '';
     options = CAT_MAP[cat] || [];
   } else if (field === 'result') {
-    options = ['Решено', 'Не решено', 'Частично', 'Эскалация'];
+    options = ['Решено', 'Не решено', 'Эскалация'];
   } else if (field === 'channel') {
     options = ['Таблица', 'Заявка', 'ЛС', 'Email', 'Telegram', 'ВК', 'Жалоба'];
   } else if (field === 'responsible_dept') {
@@ -2493,7 +2490,6 @@ mark.hl { background: #ffe566; color: inherit; border-radius: 2px; padding: 0 1p
       <option value="">Все</option>
       <option value="Решено">Решено</option>
       <option value="Не решено">Не решено</option>
-      <option value="Частично">Частично</option>
       <option value="Эскалация">Эскалация</option>
     </select>
   </div>
