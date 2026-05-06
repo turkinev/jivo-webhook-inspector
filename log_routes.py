@@ -239,8 +239,8 @@ def api_log(
         where += f" AND ifNull(t.responsible_dept, '') = '{q(dept)}'"
     if author:
         where += f" AND ifNull(d.visitor_name, '') ILIKE '%{q(author)}%'"
-    if login:
-        where += f" AND toString(ifNull(d.visitor_id, 0)) = '{q(login)}'"
+    if login and len(login) >= 3:
+        where += f" AND ifNull(d.visitor_name, '') ILIKE '%{q(login)}%'"
 
     offset = (page - 1) * PER_PAGE
 
@@ -1600,8 +1600,8 @@ def api_day_tracker(
         where += f" AND ifNull(t.responsible_dept, '') = '{q(dept)}'"
     if author:
         where += f" AND ifNull(d.visitor_name, '') ILIKE '%{q(author)}%'"
-    if login:
-        where += f" AND toString(ifNull(d.visitor_id, 0)) = '{q(login)}'"
+    if login and len(login) >= 3:
+        where += f" AND ifNull(d.visitor_name, '') ILIKE '%{q(login)}%'"
 
     offset = (page - 1) * PER_PAGE
 
@@ -2409,6 +2409,19 @@ function restoreColWidths() {
 
 initFilters();
 initResizableColumns();
+
+// Автопоиск по Автору и Логину от 3 символов с debounce 400ms
+let _searchTimer = null;
+['filter_author', 'filter_login'].forEach(id => {
+  document.getElementById(id).addEventListener('input', function() {
+    clearTimeout(_searchTimer);
+    const val = this.value;
+    if (val.length === 0 || val.length >= 3) {
+      _searchTimer = setTimeout(() => load(), 400);
+    }
+  });
+});
+
 load();
 </script>
 </body>
