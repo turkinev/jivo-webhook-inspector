@@ -1009,33 +1009,34 @@ function goPage(p) { currentPage = p; load(false); }
 async function load(resetPage = true) {
   if (resetPage) currentPage = 1;
 
-  // dr(id) — берёт value или data-restore (для динамических селектов до загрузки опций)
-  const dr = id => { const el = document.getElementById(id); return el.value || el.dataset.restore || ''; };
-
-  const params = new URLSearchParams({
-    date_from:   document.getElementById('date_from').value,
-    date_to:     document.getElementById('date_to').value,
-    operator:    dr('filter_operator'),
-    channel:     dr('filter_channel'),
-    stype:       document.getElementById('filter_stype').value,
-    category:    document.getElementById('filter_category').value,
-    subcategory: document.getElementById('filter_subcategory').value,
-    result:      document.getElementById('filter_result').value,
-    dept:        document.getElementById('filter_dept').value,
-    author:      document.getElementById('filter_author').value,
-    login:       document.getElementById('filter_login').value,
-    search:      document.getElementById('filter_search').value,
-    page:        currentPage,
-  });
-
-  saveFilters();
-
   const tbody = document.getElementById('tbody');
   tbody.innerHTML = '<tr><td colspan="16" class="no-data"><span class="spinner"></span>Загрузка...</td></tr>';
   document.getElementById('count').textContent = '';
   document.getElementById('pagination').innerHTML = '';
 
   try {
+    // dr(id) — берёт value или data-restore (для динамических селектов до загрузки опций)
+    const dr = id => { const el = document.getElementById(id); return el ? (el.value || el.dataset.restore || '') : ''; };
+    const gv = id => { const el = document.getElementById(id); return el ? el.value : ''; };
+
+    const params = new URLSearchParams({
+      date_from:   gv('date_from'),
+      date_to:     gv('date_to'),
+      operator:    dr('filter_operator'),
+      channel:     dr('filter_channel'),
+      stype:       gv('filter_stype'),
+      category:    gv('filter_category'),
+      subcategory: gv('filter_subcategory'),
+      result:      gv('filter_result'),
+      dept:        gv('filter_dept'),
+      author:      gv('filter_author'),
+      login:       gv('filter_login'),
+      search:      gv('filter_search'),
+      page:        currentPage,
+    });
+
+    saveFilters();
+
     const resp = await fetch('/api/log?' + params);
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const data = await resp.json();
@@ -1058,7 +1059,7 @@ async function load(resetPage = true) {
     }
 
     render(data.rows);
-    highlightSearch(document.getElementById('filter_search').value);
+    highlightSearch((document.getElementById('filter_search') || {}).value || '');
     renderPagination(data.page, data.pages, data.total);
     document.getElementById('count').textContent =
       `${data.total} записей, стр. ${data.page} из ${data.pages}`;
@@ -2198,31 +2199,31 @@ function goPage(p) { currentPage = p; load(false); }
 async function load(resetPage = true) {
   if (resetPage) currentPage = 1;
 
-  // dr(id) — берёт value или data-restore (для динамических селектов до загрузки опций)
-  const dr = id => { const el = document.getElementById(id); return el.value || el.dataset.restore || ''; };
-
-  const params = new URLSearchParams({
-    date_from:   document.getElementById('date_from').value,
-    date_to:     document.getElementById('date_to').value,
-    operator:    dr('filter_operator'),
-    channel:     dr('filter_channel'),
-    stype:       document.getElementById('filter_stype').value,
-    category:    document.getElementById('filter_category').value,
-    subcategory: document.getElementById('filter_subcategory').value,
-    result:      document.getElementById('filter_result').value,
-    dept:        document.getElementById('filter_dept').value,
-    author:      document.getElementById('filter_author').value,
-    login:       document.getElementById('filter_login').value,
-    search:      document.getElementById('filter_search').value,
-    page:        currentPage,
-  });
-
   const tbody = document.getElementById('tbody');
   tbody.innerHTML = '<tr><td colspan="15" class="no-data"><span class="spinner"></span>Загрузка...</td></tr>';
   document.getElementById('count').textContent = '';
   document.getElementById('pagination').innerHTML = '';
 
   try {
+    const dr = id => { const el = document.getElementById(id); return el ? (el.value || el.dataset.restore || '') : ''; };
+    const gv = id => { const el = document.getElementById(id); return el ? el.value : ''; };
+
+    const params = new URLSearchParams({
+      date_from:   gv('date_from'),
+      date_to:     gv('date_to'),
+      operator:    dr('filter_operator'),
+      channel:     dr('filter_channel'),
+      stype:       gv('filter_stype'),
+      category:    gv('filter_category'),
+      subcategory: gv('filter_subcategory'),
+      result:      gv('filter_result'),
+      dept:        gv('filter_dept'),
+      author:      gv('filter_author'),
+      login:       gv('filter_login'),
+      search:      gv('filter_search'),
+      page:        currentPage,
+    });
+
     const resp = await fetch('/api/day-tracker?' + params);
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const data = await resp.json();
@@ -2240,7 +2241,7 @@ async function load(resetPage = true) {
     }
 
     render(data.rows);
-    highlightSearch(document.getElementById('filter_search').value);
+    highlightSearch((document.getElementById('filter_search') || {}).value || '');
     renderPagination(data.page, data.pages, data.total);
     document.getElementById('count').textContent =
       `${data.total} записей, стр. ${data.page} из ${data.pages}`;
