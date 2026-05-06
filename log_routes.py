@@ -874,21 +874,37 @@ html, body {
   font-size: 12px; background: #fff; color: #333;
   height: 30px; box-sizing: border-box; transition: border-color .15s, box-shadow .15s;
 }
-.filterbar select {
-  border: 1px solid #d5d5d5; border-radius: 6px; padding: 4px 26px 4px 9px;
-  font-size: 12px; background: #fff; color: #333;
-  height: 30px; box-sizing: border-box; transition: border-color .15s, box-shadow .15s;
-  appearance: none; -webkit-appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23999'/%3E%3C/svg%3E");
-  background-repeat: no-repeat; background-position: right 8px center;
-  cursor: pointer;
-}
-.filterbar input[type=date]:focus, .filterbar input[type=text]:focus, .filterbar select:focus {
+.filterbar input[type=date]:focus, .filterbar input[type=text]:focus {
   outline: none; border-color: #1a73e8; box-shadow: 0 0 0 2px rgba(26,115,232,.12);
 }
-.filterbar select:hover { border-color: #b0b0b0; }
-.filterbar select option { padding: 6px; }
 .filter-sep { width: 1px; height: 22px; background: #d8d8d8; margin: 0 2px; }
+.fsel { position: relative; display: inline-flex; align-items: center; }
+.fsel-trigger {
+  display: flex; align-items: center; gap: 6px;
+  border: 1px solid #d5d5d5; border-radius: 6px; padding: 4px 9px;
+  font-size: 12px; background: #fff; color: #333;
+  height: 30px; min-width: 80px; box-sizing: border-box;
+  cursor: pointer; user-select: none; white-space: nowrap;
+  transition: border-color .15s, box-shadow .15s;
+}
+.fsel-trigger:hover { border-color: #b0b0b0; }
+.fsel.open > .fsel-trigger { border-color: #1a73e8; box-shadow: 0 0 0 2px rgba(26,115,232,.12); }
+.fsel-label { flex: 1; }
+.fsel-caret { width: 8px; height: 5px; flex-shrink: 0; color: #aaa; transition: transform .15s; }
+.fsel.open .fsel-caret { transform: rotate(180deg); color: #1a73e8; }
+.fsel-menu {
+  display: none; position: absolute; top: calc(100% + 3px); left: 0;
+  min-width: 100%; max-height: 240px; overflow-y: auto;
+  background: #fff; border: 1px solid #ddd; border-radius: 8px;
+  box-shadow: 0 6px 24px rgba(0,0,0,.12); z-index: 9999; padding: 4px 0;
+}
+.fsel.open .fsel-menu { display: block; }
+.fsel-opt {
+  padding: 7px 14px; font-size: 12px; color: #444;
+  cursor: pointer; transition: background .1s; white-space: nowrap;
+}
+.fsel-opt:hover { background: #f0f7ff; color: #1a73e8; }
+.fsel-opt.fsel-selected { background: #e8f0fe; color: #1a73e8; font-weight: 500; }
 .filterbar-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 .filterbar-count { font-size: 12px; color: #999; white-space: nowrap; padding-left: 4px; border-left: 1px solid #e0e0e0; }
 .count { font-size: 12px; color: #888; white-space: nowrap; }
@@ -1046,6 +1062,20 @@ mark.hl { background: #ffe566; color: inherit; border-radius: 2px; padding: 0 1p
 
 .no-data { text-align: center; padding: 60px 20px; color: #aaa; font-size: 14px; }
 
+/* Manual rows — ячейка problem_summary той же высоты, что summary-text */
+tr[data-manual="1"] .editable[data-field="problem_summary"] {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  cursor: text;
+}
+tr[data-manual="1"] .editable[data-field="problem_summary"]:focus {
+  display: block;
+  -webkit-line-clamp: unset;
+  overflow: visible;
+}
+
 /* Manual rows */
 tr[data-manual="1"] td:first-child { border-left: 2px solid #d0c8a0; }
 
@@ -1135,7 +1165,10 @@ tr.dialog-row td { padding: 0 !important; background: #f8f9fa; border-bottom: 2p
   <div class="filter-sep"></div>
   <div class="fg">
     <label>Оператор</label>
-    <select id="filter_operator"><option value="">Все</option></select>
+    <div class="fsel" id="filter_operator" data-value="">
+      <div class="fsel-trigger"><span class="fsel-label">Все</span><svg class="fsel-caret" viewBox="0 0 8 5"><path d="M0 0l4 5 4-5z" fill="currentColor"/></svg></div>
+      <div class="fsel-menu"><div class="fsel-opt fsel-selected" data-value="">Все</div></div>
+    </div>
   </div>
   <div class="fg">
     <label>Автор</label>
@@ -1148,50 +1181,66 @@ tr.dialog-row td { padding: 0 !important; background: #f8f9fa; border-bottom: 2p
   <div class="filter-sep"></div>
   <div class="fg">
     <label>Тип</label>
-    <select id="filter_stype">
-      <option value="">Все</option>
-      <option value="Клиент">Клиент</option>
-      <option value="ПВЗ">ПВЗ</option>
-      <option value="Сотрудник">Сотрудник</option>
-    </select>
+    <div class="fsel" id="filter_stype" data-value="">
+      <div class="fsel-trigger"><span class="fsel-label">Все</span><svg class="fsel-caret" viewBox="0 0 8 5"><path d="M0 0l4 5 4-5z" fill="currentColor"/></svg></div>
+      <div class="fsel-menu">
+        <div class="fsel-opt fsel-selected" data-value="">Все</div>
+        <div class="fsel-opt" data-value="Клиент">Клиент</div>
+        <div class="fsel-opt" data-value="ПВЗ">ПВЗ</div>
+        <div class="fsel-opt" data-value="Сотрудник">Сотрудник</div>
+      </div>
+    </div>
   </div>
   <div class="fg">
     <label>Канал</label>
-    <select id="filter_channel"><option value="">Все</option></select>
+    <div class="fsel" id="filter_channel" data-value="">
+      <div class="fsel-trigger"><span class="fsel-label">Все</span><svg class="fsel-caret" viewBox="0 0 8 5"><path d="M0 0l4 5 4-5z" fill="currentColor"/></svg></div>
+      <div class="fsel-menu"><div class="fsel-opt fsel-selected" data-value="">Все</div></div>
+    </div>
   </div>
   <div class="filter-sep"></div>
   <div class="fg">
     <label>Категория</label>
-    <select id="filter_category" onchange="updateSubcatFilter()">
-      <option value="">Все</option>
-    </select>
+    <div class="fsel" id="filter_category" data-value="" data-on-change="updateSubcatFilter">
+      <div class="fsel-trigger"><span class="fsel-label">Все</span><svg class="fsel-caret" viewBox="0 0 8 5"><path d="M0 0l4 5 4-5z" fill="currentColor"/></svg></div>
+      <div class="fsel-menu"><div class="fsel-opt fsel-selected" data-value="">Все</div></div>
+    </div>
   </div>
   <div class="fg">
     <label>Подкатегория</label>
-    <select id="filter_subcategory"><option value="">Все</option></select>
+    <div class="fsel" id="filter_subcategory" data-value="">
+      <div class="fsel-trigger"><span class="fsel-label">Все</span><svg class="fsel-caret" viewBox="0 0 8 5"><path d="M0 0l4 5 4-5z" fill="currentColor"/></svg></div>
+      <div class="fsel-menu"><div class="fsel-opt fsel-selected" data-value="">Все</div></div>
+    </div>
   </div>
   <div class="filter-sep"></div>
   <div class="fg">
     <label>Результат</label>
-    <select id="filter_result">
-      <option value="">Все</option>
-      <option value="Решено">Решено</option>
-      <option value="Не решено">Не решено</option>
-      <option value="Эскалация">Эскалация</option>
-    </select>
+    <div class="fsel" id="filter_result" data-value="">
+      <div class="fsel-trigger"><span class="fsel-label">Все</span><svg class="fsel-caret" viewBox="0 0 8 5"><path d="M0 0l4 5 4-5z" fill="currentColor"/></svg></div>
+      <div class="fsel-menu">
+        <div class="fsel-opt fsel-selected" data-value="">Все</div>
+        <div class="fsel-opt" data-value="Решено">Решено</div>
+        <div class="fsel-opt" data-value="Не решено">Не решено</div>
+        <div class="fsel-opt" data-value="Эскалация">Эскалация</div>
+      </div>
+    </div>
   </div>
   <div class="fg">
     <label>Отдел</label>
-    <select id="filter_dept">
-      <option value="">Все</option>
-      <option value="Склад">Склад</option>
-      <option value="ОКК">ОКК</option>
-      <option value="ИТ">ИТ</option>
-      <option value="Продукт">Продукт</option>
-      <option value="Маркетинг">Маркетинг</option>
-      <option value="Бухгалтерия">Бухгалтерия</option>
-      <option value="Юрист">Юрист</option>
-    </select>
+    <div class="fsel" id="filter_dept" data-value="">
+      <div class="fsel-trigger"><span class="fsel-label">Все</span><svg class="fsel-caret" viewBox="0 0 8 5"><path d="M0 0l4 5 4-5z" fill="currentColor"/></svg></div>
+      <div class="fsel-menu">
+        <div class="fsel-opt fsel-selected" data-value="">Все</div>
+        <div class="fsel-opt" data-value="Склад">Склад</div>
+        <div class="fsel-opt" data-value="ОКК">ОКК</div>
+        <div class="fsel-opt" data-value="ИТ">ИТ</div>
+        <div class="fsel-opt" data-value="Продукт">Продукт</div>
+        <div class="fsel-opt" data-value="Маркетинг">Маркетинг</div>
+        <div class="fsel-opt" data-value="Бухгалтерия">Бухгалтерия</div>
+        <div class="fsel-opt" data-value="Юрист">Юрист</div>
+      </div>
+    </div>
   </div>
   <div class="filterbar-actions">
     <button class="btn" onclick="load()">Применить</button>
@@ -1277,18 +1326,69 @@ function badgeClass(result) {
 
 const FILTERS_KEY = 'log_filters_v1';
 
+// ── Custom fsel dropdowns ──────────────────────────────────────────────────
+function fselGet(id) {
+  const el = document.getElementById(id);
+  return el ? (el.dataset.value || '') : '';
+}
+function fselSet(id, value) {
+  const el = document.getElementById(id);
+  if (!el || !el.classList.contains('fsel')) return;
+  el.dataset.value = value;
+  const opt = el.querySelector('.fsel-opt[data-value="' + CSS.escape(value) + '"]') ||
+              [...el.querySelectorAll('.fsel-opt')].find(o => o.dataset.value === value);
+  el.querySelector('.fsel-label').textContent = opt ? opt.textContent : (value || 'Все');
+  el.querySelectorAll('.fsel-opt').forEach(o => o.classList.toggle('fsel-selected', o.dataset.value === value));
+}
+function fselSetOptions(id, options) {
+  const el = document.getElementById(id);
+  if (!el || !el.classList.contains('fsel')) return;
+  const cur = el.dataset.restore || el.dataset.value || '';
+  delete el.dataset.restore;
+  el.querySelector('.fsel-menu').innerHTML = options.map(o =>
+    `<div class="fsel-opt${o.value === cur ? ' fsel-selected' : ''}" data-value="${esc(o.value)}">${esc(o.label)}</div>`
+  ).join('');
+  fselBindMenu(el);
+  fselSet(id, cur);
+}
+function fselBindMenu(el) {
+  el.querySelectorAll('.fsel-opt').forEach(opt => {
+    opt.addEventListener('click', e => {
+      e.stopPropagation();
+      fselSet(el.id, opt.dataset.value);
+      el.classList.remove('open');
+      const cb = el.dataset.onChange;
+      if (cb && window[cb]) window[cb]();
+    });
+  });
+}
+function initFsels() {
+  document.querySelectorAll('.fsel').forEach(el => {
+    el.querySelector('.fsel-trigger').addEventListener('click', e => {
+      e.stopPropagation();
+      const isOpen = el.classList.contains('open');
+      document.querySelectorAll('.fsel.open').forEach(f => f.classList.remove('open'));
+      if (!isOpen) el.classList.add('open');
+    });
+    fselBindMenu(el);
+  });
+  document.addEventListener('click', () => {
+    document.querySelectorAll('.fsel.open').forEach(f => f.classList.remove('open'));
+  });
+}
+
 function saveFilters() {
   try {
     localStorage.setItem(FILTERS_KEY, JSON.stringify({
       date_from:   document.getElementById('date_from').value,
       date_to:     document.getElementById('date_to').value,
-      stype:       document.getElementById('filter_stype').value,
-      category:    document.getElementById('filter_category').value,
-      subcategory: document.getElementById('filter_subcategory').value,
-      result:      document.getElementById('filter_result').value,
-      dept:        document.getElementById('filter_dept').value,
-      operator:    document.getElementById('filter_operator').value,
-      channel:     document.getElementById('filter_channel').value,
+      stype:       fselGet('filter_stype'),
+      category:    fselGet('filter_category'),
+      subcategory: fselGet('filter_subcategory'),
+      result:      fselGet('filter_result'),
+      dept:        fselGet('filter_dept'),
+      operator:    fselGet('filter_operator'),
+      channel:     fselGet('filter_channel'),
       author:      document.getElementById('filter_author').value,
       login:       document.getElementById('filter_login').value,
       search:      document.getElementById('filter_search').value,
@@ -1300,30 +1400,28 @@ function restoreFilters() {
   try {
     const f = JSON.parse(localStorage.getItem(FILTERS_KEY) || '{}');
     if (!f || !Object.keys(f).length) return;
-    const set = (id, val) => { if (val) { const el = document.getElementById(id); if (el) el.value = val; } };
-    set('date_from', f.date_from);
-    set('date_to',   f.date_to);
-    set('filter_stype',       f.stype);
-    set('filter_result',      f.result);
-    set('filter_dept',        f.dept);
-    set('filter_author',      f.author);
-    set('filter_login',       f.login);
-    set('filter_search',      f.search);
+    const setInput = (id, val) => { if (val) { const el = document.getElementById(id); if (el) el.value = val; } };
+    setInput('date_from', f.date_from);
+    setInput('date_to',   f.date_to);
+    setInput('filter_author', f.author);
+    setInput('filter_login',  f.login);
+    setInput('filter_search', f.search);
+    if (f.stype)  fselSet('filter_stype',  f.stype);
+    if (f.result) fselSet('filter_result', f.result);
+    if (f.dept)   fselSet('filter_dept',   f.dept);
     if (f.category) {
-      set('filter_category', f.category);
+      fselSet('filter_category', f.category);
       updateSubcatFilter();
-      set('filter_subcategory', f.subcategory);
+      if (f.subcategory) fselSet('filter_subcategory', f.subcategory);
     }
-    // operator и channel — динамические, восстанавливаем через data-restore после загрузки опций
+    // operator и channel — динамические, восстанавливаем через data-restore
     if (f.operator) document.getElementById('filter_operator').dataset.restore = f.operator;
     if (f.channel)  document.getElementById('filter_channel').dataset.restore  = f.channel;
   } catch(_) {}
 }
 
 function initFilters() {
-  const sel = document.getElementById('filter_category');
-  sel.innerHTML = '<option value="">Все</option>' +
-    Object.keys(CAT_MAP).map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+  fselSetOptions('filter_category', [{value:'',label:'Все'}, ...Object.keys(CAT_MAP).map(c => ({value:c,label:c}))]);
   restoreFilters();
 
   // Автопоиск по Автору, Логину и Поиску от 3 символов с debounce 400ms
@@ -1342,12 +1440,9 @@ function initFilters() {
 }
 
 function updateSubcatFilter() {
-  const cat = document.getElementById('filter_category').value;
-  const sel = document.getElementById('filter_subcategory');
-  const cur = sel.value;
+  const cat = fselGet('filter_category');
   const subs = CAT_MAP[cat] || [];
-  sel.innerHTML = '<option value="">Все</option>' +
-    subs.map(s => `<option value="${esc(s)}"${s===cur?' selected':''}>${esc(s)}</option>`).join('');
+  fselSetOptions('filter_subcategory', [{value:'',label:'Все'}, ...subs.map(s => ({value:s,label:s}))]);
 }
 
 function goPage(p) { currentPage = p; load(false); }
@@ -1361,20 +1456,19 @@ async function load(resetPage = true) {
   document.getElementById('pagination').innerHTML = '';
 
   try {
-    // dr(id) — берёт value или data-restore (для динамических селектов до загрузки опций)
-    const dr = id => { const el = document.getElementById(id); return el ? (el.value || el.dataset.restore || '') : ''; };
+    const fv = id => fselGet(id) || (document.getElementById(id)||{}).dataset?.restore || '';
     const gv = id => { const el = document.getElementById(id); return el ? el.value : ''; };
 
     const params = new URLSearchParams({
       date_from:   gv('date_from'),
       date_to:     gv('date_to'),
-      operator:    dr('filter_operator'),
-      channel:     dr('filter_channel'),
-      stype:       gv('filter_stype'),
-      category:    gv('filter_category'),
-      subcategory: gv('filter_subcategory'),
-      result:      gv('filter_result'),
-      dept:        gv('filter_dept'),
+      operator:    fv('filter_operator'),
+      channel:     fv('filter_channel'),
+      stype:       fv('filter_stype'),
+      category:    fv('filter_category'),
+      subcategory: fv('filter_subcategory'),
+      result:      fv('filter_result'),
+      dept:        fv('filter_dept'),
       author:      gv('filter_author'),
       login:       gv('filter_login'),
       search:      gv('filter_search'),
@@ -1389,19 +1483,8 @@ async function load(resetPage = true) {
 
     // Обновляем списки операторов и каналов (только при первой загрузке / сбросе)
     if (resetPage) {
-      const selOp = document.getElementById('filter_operator');
-      const curOp = selOp.value || selOp.dataset.restore || '';
-      delete selOp.dataset.restore;
-      selOp.innerHTML = '<option value="">Все</option>' +
-        data.operators.map(o => `<option value="${esc(o)}"${o===curOp?' selected':''}>${esc(o)}</option>`).join('');
-      if (curOp) selOp.value = curOp;
-
-      const selCh = document.getElementById('filter_channel');
-      const curCh = selCh.value || selCh.dataset.restore || '';
-      delete selCh.dataset.restore;
-      selCh.innerHTML = '<option value="">Все</option>' +
-        (data.channels||[]).map(c => `<option value="${esc(c)}"${c===curCh?' selected':''}>${esc(c)}</option>`).join('');
-      if (curCh) selCh.value = curCh;
+      fselSetOptions('filter_operator', [{value:'',label:'Все'}, ...data.operators.map(o => ({value:o,label:o}))]);
+      fselSetOptions('filter_channel',  [{value:'',label:'Все'}, ...(data.channels||[]).map(c => ({value:c,label:c}))]);
     }
 
     render(data.rows);
@@ -1409,7 +1492,7 @@ async function load(resetPage = true) {
     applyHiddenCols();
     renderPagination(data.page, data.pages, data.total);
     document.getElementById('count').textContent =
-      `${data.total} записей, стр. ${data.page} из ${data.pages}`;
+      `${data.total} записей`;
   } catch (e) {
     tbody.innerHTML = `<tr><td colspan="16" class="no-data">Ошибка загрузки: ${e.message}</td></tr>`;
   }
@@ -1963,6 +2046,8 @@ function prependManualRow(id, dateStr, timeStr) {
   tr.querySelector('.editable').focus();
 }
 
+try { initFsels(); }   catch(e) { console.error('initFsels error:', e); }
+try { initFsels();   } catch(e) { console.error('initFsels error:', e); }
 try { initFilters(); } catch(e) { console.error('initFilters error:', e); }
 try { initResizableColumns(); } catch(e) { console.error('initResizableColumns error:', e); }
 load();
@@ -2269,21 +2354,37 @@ html, body {
   font-size: 12px; background: #fff; color: #333;
   height: 30px; box-sizing: border-box; transition: border-color .15s, box-shadow .15s;
 }
-.filterbar select {
-  border: 1px solid #d5d5d5; border-radius: 6px; padding: 4px 26px 4px 9px;
-  font-size: 12px; background: #fff; color: #333;
-  height: 30px; box-sizing: border-box; transition: border-color .15s, box-shadow .15s;
-  appearance: none; -webkit-appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23999'/%3E%3C/svg%3E");
-  background-repeat: no-repeat; background-position: right 8px center;
-  cursor: pointer;
-}
-.filterbar input[type=date]:focus, .filterbar input[type=text]:focus, .filterbar select:focus {
+.filterbar input[type=date]:focus, .filterbar input[type=text]:focus {
   outline: none; border-color: #1a73e8; box-shadow: 0 0 0 2px rgba(26,115,232,.12);
 }
-.filterbar select:hover { border-color: #b0b0b0; }
-.filterbar select option { padding: 6px; }
 .filter-sep { width: 1px; height: 22px; background: #d8d8d8; margin: 0 2px; }
+.fsel { position: relative; display: inline-flex; align-items: center; }
+.fsel-trigger {
+  display: flex; align-items: center; gap: 6px;
+  border: 1px solid #d5d5d5; border-radius: 6px; padding: 4px 9px;
+  font-size: 12px; background: #fff; color: #333;
+  height: 30px; min-width: 80px; box-sizing: border-box;
+  cursor: pointer; user-select: none; white-space: nowrap;
+  transition: border-color .15s, box-shadow .15s;
+}
+.fsel-trigger:hover { border-color: #b0b0b0; }
+.fsel.open > .fsel-trigger { border-color: #1a73e8; box-shadow: 0 0 0 2px rgba(26,115,232,.12); }
+.fsel-label { flex: 1; }
+.fsel-caret { width: 8px; height: 5px; flex-shrink: 0; color: #aaa; transition: transform .15s; }
+.fsel.open .fsel-caret { transform: rotate(180deg); color: #1a73e8; }
+.fsel-menu {
+  display: none; position: absolute; top: calc(100% + 3px); left: 0;
+  min-width: 100%; max-height: 240px; overflow-y: auto;
+  background: #fff; border: 1px solid #ddd; border-radius: 8px;
+  box-shadow: 0 6px 24px rgba(0,0,0,.12); z-index: 9999; padding: 4px 0;
+}
+.fsel.open .fsel-menu { display: block; }
+.fsel-opt {
+  padding: 7px 14px; font-size: 12px; color: #444;
+  cursor: pointer; transition: background .1s; white-space: nowrap;
+}
+.fsel-opt:hover { background: #f0f7ff; color: #1a73e8; }
+.fsel-opt.fsel-selected { background: #e8f0fe; color: #1a73e8; font-weight: 500; }
 .filterbar-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 .filterbar-count { font-size: 12px; color: #999; white-space: nowrap; padding-left: 4px; border-left: 1px solid #e0e0e0; }
 .count { font-size: 12px; color: #888; white-space: nowrap; }
@@ -2485,7 +2586,10 @@ mark.hl { background: #ffe566; color: inherit; border-radius: 2px; padding: 0 1p
   <div class="filter-sep"></div>
   <div class="fg">
     <label>Оператор</label>
-    <select id="filter_operator"><option value="">Все</option></select>
+    <div class="fsel" id="filter_operator" data-value="">
+      <div class="fsel-trigger"><span class="fsel-label">Все</span><svg class="fsel-caret" viewBox="0 0 8 5"><path d="M0 0l4 5 4-5z" fill="currentColor"/></svg></div>
+      <div class="fsel-menu"><div class="fsel-opt fsel-selected" data-value="">Все</div></div>
+    </div>
   </div>
   <div class="fg">
     <label>Автор</label>
@@ -2498,43 +2602,57 @@ mark.hl { background: #ffe566; color: inherit; border-radius: 2px; padding: 0 1p
   <div class="filter-sep"></div>
   <div class="fg">
     <label>Тип</label>
-    <select id="filter_stype">
-      <option value="">Все</option>
-      <option value="Клиент">Клиент</option>
-      <option value="ПВЗ">ПВЗ</option>
-      <option value="Сотрудник">Сотрудник</option>
-    </select>
+    <div class="fsel" id="filter_stype" data-value="">
+      <div class="fsel-trigger"><span class="fsel-label">Все</span><svg class="fsel-caret" viewBox="0 0 8 5"><path d="M0 0l4 5 4-5z" fill="currentColor"/></svg></div>
+      <div class="fsel-menu">
+        <div class="fsel-opt fsel-selected" data-value="">Все</div>
+        <div class="fsel-opt" data-value="Клиент">Клиент</div>
+        <div class="fsel-opt" data-value="ПВЗ">ПВЗ</div>
+        <div class="fsel-opt" data-value="Сотрудник">Сотрудник</div>
+      </div>
+    </div>
   </div>
   <div class="fg">
     <label>Канал</label>
-    <select id="filter_channel"><option value="">Все</option></select>
+    <div class="fsel" id="filter_channel" data-value="">
+      <div class="fsel-trigger"><span class="fsel-label">Все</span><svg class="fsel-caret" viewBox="0 0 8 5"><path d="M0 0l4 5 4-5z" fill="currentColor"/></svg></div>
+      <div class="fsel-menu"><div class="fsel-opt fsel-selected" data-value="">Все</div></div>
+    </div>
   </div>
   <div class="filter-sep"></div>
   <div class="fg">
     <label>Категория</label>
-    <select id="filter_category" onchange="updateSubcatFilter()">
-      <option value="">Все</option>
-    </select>
+    <div class="fsel" id="filter_category" data-value="" data-on-change="updateSubcatFilter">
+      <div class="fsel-trigger"><span class="fsel-label">Все</span><svg class="fsel-caret" viewBox="0 0 8 5"><path d="M0 0l4 5 4-5z" fill="currentColor"/></svg></div>
+      <div class="fsel-menu"><div class="fsel-opt fsel-selected" data-value="">Все</div></div>
+    </div>
   </div>
   <div class="fg">
     <label>Подкатегория</label>
-    <select id="filter_subcategory"><option value="">Все</option></select>
+    <div class="fsel" id="filter_subcategory" data-value="">
+      <div class="fsel-trigger"><span class="fsel-label">Все</span><svg class="fsel-caret" viewBox="0 0 8 5"><path d="M0 0l4 5 4-5z" fill="currentColor"/></svg></div>
+      <div class="fsel-menu"><div class="fsel-opt fsel-selected" data-value="">Все</div></div>
+    </div>
   </div>
   <div class="filter-sep"></div>
   <div class="fg">
     <label>Результат</label>
-    <select id="filter_result">
-      <option value="">Все</option>
-      <option value="Решено">Решено</option>
-      <option value="Не решено">Не решено</option>
-      <option value="Эскалация">Эскалация</option>
-    </select>
+    <div class="fsel" id="filter_result" data-value="">
+      <div class="fsel-trigger"><span class="fsel-label">Все</span><svg class="fsel-caret" viewBox="0 0 8 5"><path d="M0 0l4 5 4-5z" fill="currentColor"/></svg></div>
+      <div class="fsel-menu">
+        <div class="fsel-opt fsel-selected" data-value="">Все</div>
+        <div class="fsel-opt" data-value="Решено">Решено</div>
+        <div class="fsel-opt" data-value="Не решено">Не решено</div>
+        <div class="fsel-opt" data-value="Эскалация">Эскалация</div>
+      </div>
+    </div>
   </div>
   <div class="fg">
     <label>Отдел</label>
-    <select id="filter_dept">
-      <option value="">Все</option>
-    </select>
+    <div class="fsel" id="filter_dept" data-value="">
+      <div class="fsel-trigger"><span class="fsel-label">Все</span><svg class="fsel-caret" viewBox="0 0 8 5"><path d="M0 0l4 5 4-5z" fill="currentColor"/></svg></div>
+      <div class="fsel-menu"><div class="fsel-opt fsel-selected" data-value="">Все</div></div>
+    </div>
   </div>
   <div class="filterbar-actions">
     <button class="btn" onclick="load()">Применить</button>
@@ -2640,23 +2758,65 @@ const CAT_MAP = {
   'Не определено':         ['Служебное / внутреннее'],
 };
 
-function initFilters() {
-  const sel = document.getElementById('filter_category');
-  sel.innerHTML = '<option value="">Все</option>' +
-    Object.keys(CAT_MAP).map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+// ── Custom fsel dropdowns ──────────────────────────────────────────────────
+function fselGet(id) {
+  const el = document.getElementById(id);
+  return el ? (el.dataset.value || '') : '';
+}
+function fselSet(id, value) {
+  const el = document.getElementById(id);
+  if (!el || !el.classList.contains('fsel')) return;
+  el.dataset.value = value;
+  const opt = [...el.querySelectorAll('.fsel-opt')].find(o => o.dataset.value === value);
+  el.querySelector('.fsel-label').textContent = opt ? opt.textContent : (value || 'Все');
+  el.querySelectorAll('.fsel-opt').forEach(o => o.classList.toggle('fsel-selected', o.dataset.value === value));
+}
+function fselSetOptions(id, options) {
+  const el = document.getElementById(id);
+  if (!el || !el.classList.contains('fsel')) return;
+  const cur = el.dataset.restore || el.dataset.value || '';
+  delete el.dataset.restore;
+  el.querySelector('.fsel-menu').innerHTML = options.map(o =>
+    `<div class="fsel-opt${o.value === cur ? ' fsel-selected' : ''}" data-value="${esc(o.value)}">${esc(o.label)}</div>`
+  ).join('');
+  fselBindMenu(el);
+  fselSet(id, cur);
+}
+function fselBindMenu(el) {
+  el.querySelectorAll('.fsel-opt').forEach(opt => {
+    opt.addEventListener('click', e => {
+      e.stopPropagation();
+      fselSet(el.id, opt.dataset.value);
+      el.classList.remove('open');
+      const cb = el.dataset.onChange;
+      if (cb && window[cb]) window[cb]();
+    });
+  });
+}
+function initFsels() {
+  document.querySelectorAll('.fsel').forEach(el => {
+    el.querySelector('.fsel-trigger').addEventListener('click', e => {
+      e.stopPropagation();
+      const isOpen = el.classList.contains('open');
+      document.querySelectorAll('.fsel.open').forEach(f => f.classList.remove('open'));
+      if (!isOpen) el.classList.add('open');
+    });
+    fselBindMenu(el);
+  });
+  document.addEventListener('click', () => {
+    document.querySelectorAll('.fsel.open').forEach(f => f.classList.remove('open'));
+  });
+}
 
-  const dsel = document.getElementById('filter_dept');
-  dsel.innerHTML = '<option value="">Все</option>' +
-    DEPTS.map(d => `<option value="${esc(d)}">${esc(d)}</option>`).join('');
+function initFilters() {
+  fselSetOptions('filter_category', [{value:'',label:'Все'}, ...Object.keys(CAT_MAP).map(c => ({value:c,label:c}))]);
+  fselSetOptions('filter_dept', [{value:'',label:'Все'}, ...DEPTS.map(d => ({value:d,label:d}))]);
 }
 
 function updateSubcatFilter() {
-  const cat = document.getElementById('filter_category').value;
-  const sel = document.getElementById('filter_subcategory');
-  const cur = sel.value;
+  const cat = fselGet('filter_category');
   const subs = CAT_MAP[cat] || [];
-  sel.innerHTML = '<option value="">Все</option>' +
-    subs.map(s => `<option value="${esc(s)}"${s===cur?' selected':''}>${esc(s)}</option>`).join('');
+  fselSetOptions('filter_subcategory', [{value:'',label:'Все'}, ...subs.map(s => ({value:s,label:s}))]);
 }
 
 function goPage(p) { currentPage = p; load(false); }
@@ -2670,19 +2830,19 @@ async function load(resetPage = true) {
   document.getElementById('pagination').innerHTML = '';
 
   try {
-    const dr = id => { const el = document.getElementById(id); return el ? (el.value || el.dataset.restore || '') : ''; };
+    const fv = id => fselGet(id) || (document.getElementById(id)||{}).dataset?.restore || '';
     const gv = id => { const el = document.getElementById(id); return el ? el.value : ''; };
 
     const params = new URLSearchParams({
       date_from:   gv('date_from'),
       date_to:     gv('date_to'),
-      operator:    dr('filter_operator'),
-      channel:     dr('filter_channel'),
-      stype:       gv('filter_stype'),
-      category:    gv('filter_category'),
-      subcategory: gv('filter_subcategory'),
-      result:      gv('filter_result'),
-      dept:        gv('filter_dept'),
+      operator:    fv('filter_operator'),
+      channel:     fv('filter_channel'),
+      stype:       fv('filter_stype'),
+      category:    fv('filter_category'),
+      subcategory: fv('filter_subcategory'),
+      result:      fv('filter_result'),
+      dept:        fv('filter_dept'),
       author:      gv('filter_author'),
       login:       gv('filter_login'),
       search:      gv('filter_search'),
@@ -2694,15 +2854,8 @@ async function load(resetPage = true) {
     const data = await resp.json();
 
     if (resetPage) {
-      const selOp = document.getElementById('filter_operator');
-      const curOp = selOp.value;
-      selOp.innerHTML = '<option value="">Все</option>' +
-        data.operators.map(o => `<option value="${esc(o)}"${o===curOp?' selected':''}>${esc(o)}</option>`).join('');
-
-      const selCh = document.getElementById('filter_channel');
-      const curCh = selCh.value;
-      selCh.innerHTML = '<option value="">Все</option>' +
-        (data.channels||[]).map(c => `<option value="${esc(c)}"${c===curCh?' selected':''}>${esc(c)}</option>`).join('');
+      fselSetOptions('filter_operator', [{value:'',label:'Все'}, ...data.operators.map(o => ({value:o,label:o}))]);
+      fselSetOptions('filter_channel',  [{value:'',label:'Все'}, ...(data.channels||[]).map(c => ({value:c,label:c}))]);
     }
 
     render(data.rows);
@@ -2710,7 +2863,7 @@ async function load(resetPage = true) {
     applyHiddenCols();
     renderPagination(data.page, data.pages, data.total);
     document.getElementById('count').textContent =
-      `${data.total} записей, стр. ${data.page} из ${data.pages}`;
+      `${data.total} записей`;
   } catch (e) {
     tbody.innerHTML = `<tr><td colspan="15" class="no-data">Ошибка загрузки: ${e.message}</td></tr>`;
   }
