@@ -87,7 +87,8 @@ def ensure_table():
         ) ENGINE = ReplacingMergeTree(updated_at)
         ORDER BY chat_id
     """)
-    for col in ["source_type", "category", "subcategory", "comment_manager"]:
+    for col in ["source_type", "category", "subcategory", "comment_manager",
+                "comment_author", "comment_manager_author"]:
         try:
             ch_execute(f"ALTER TABLE support_log_edits ADD COLUMN IF NOT EXISTS {col} String DEFAULT ''")
         except Exception:
@@ -279,7 +280,9 @@ def api_log(
                e.result,
                ifNull(a.resolution_status, ''))                                    AS result,
             ifNull(e.comment, '')                                                  AS comment,
+            ifNull(e.comment_author, '')                                           AS comment_author,
             ifNull(e.comment_manager, '')                                          AS comment_manager,
+            ifNull(e.comment_manager_author, '')                                   AS comment_manager_author,
             ifNull(t.responsible_dept, '')                                         AS responsible_dept,
             multiIf(d.source='jivo','Чат',d.source='site_pm','ЛС',d.source='claim','Форма',d.source) AS channel
         FROM dialogs d
@@ -431,33 +434,38 @@ def api_edit_manual(row_id: int, payload: ManualEditPayload):
 
 
 class EditPayload(BaseModel):
-    organizer:        Optional[str] = ""
-    responsible:      Optional[str] = ""
-    result:           Optional[str] = ""
-    comment:          Optional[str] = ""
-    comment_manager:  Optional[str] = ""
-    source_type:      Optional[str] = ""
-    category:         Optional[str] = ""
-    subcategory:      Optional[str] = ""
-    responsible_dept: Optional[str] = None   # None = поле не пришло → не трогаем day_tracker_edits
+    organizer:                Optional[str] = ""
+    responsible:              Optional[str] = ""
+    result:                   Optional[str] = ""
+    comment:                  Optional[str] = ""
+    comment_author:           Optional[str] = ""
+    comment_manager:          Optional[str] = ""
+    comment_manager_author:   Optional[str] = ""
+    source_type:              Optional[str] = ""
+    category:                 Optional[str] = ""
+    subcategory:              Optional[str] = ""
+    responsible_dept:         Optional[str] = None   # None = поле не пришло → не трогаем day_tracker_edits
 
 
 @router.post("/api/log/{chat_id}")
 def api_edit(chat_id: int, payload: EditPayload):
     row = json.dumps({
-        "chat_id":          chat_id,
-        "organizer":        payload.organizer        or "",
-        "responsible":      payload.responsible      or "",
-        "result":           payload.result           or "",
-        "comment":          payload.comment          or "",
-        "comment_manager":  payload.comment_manager  or "",
-        "source_type":      payload.source_type      or "",
-        "category":         payload.category         or "",
-        "subcategory":      payload.subcategory      or "",
+        "chat_id":                  chat_id,
+        "organizer":                payload.organizer               or "",
+        "responsible":              payload.responsible             or "",
+        "result":                   payload.result                  or "",
+        "comment":                  payload.comment                 or "",
+        "comment_author":           payload.comment_author          or "",
+        "comment_manager":          payload.comment_manager         or "",
+        "comment_manager_author":   payload.comment_manager_author  or "",
+        "source_type":              payload.source_type             or "",
+        "category":                 payload.category                or "",
+        "subcategory":              payload.subcategory             or "",
     }, ensure_ascii=False)
     ch_execute(
         "INSERT INTO support_log_edits "
-        "(chat_id, organizer, responsible, result, comment, comment_manager, source_type, category, subcategory) "
+        "(chat_id, organizer, responsible, result, comment, comment_author, "
+        "comment_manager, comment_manager_author, source_type, category, subcategory) "
         "FORMAT JSONEachRow",
         data=row.encode("utf-8"),
     )
@@ -648,6 +656,8 @@ tbody tr:hover td.col-dept { background: #eef2ff; }
 }
 .editable.saving { opacity: .6; }
 .editable.saved  { animation: flash 1s ease forwards; }
+.comment-wrap { display: flex; flex-direction: column; gap: 1px; }
+.comment-author { font-weight: 600; font-size: 11px; color: #888; line-height: 1.2; }
 .select-cell {
   cursor: pointer; padding: 3px 5px; border-radius: 4px;
   min-width: 60px; min-height: 20px;
@@ -1065,6 +1075,14 @@ function editCell(field, value, placeholder) {
   return `<span>${esc(value)}</span>`;
 }
 
+function commentCell(field, value, author, placeholder) {
+  const authorHtml = author ? `<span class="comment-author">${esc(author)}:</span>` : '';
+  if (canEdit(field)) {
+    return `<div class="comment-wrap">${authorHtml}<div class="editable" contenteditable="true" data-field="${field}" data-orig="${esc(value)}" data-placeholder="${placeholder}">${esc(value)}</div></div>`;
+  }
+  return `<div class="comment-wrap">${authorHtml}<span>${esc(value) || '<span style="color:#bbb">—</span>'}</span></div>`;
+}
+
 function deptCell(value) {
   const inner = value ? `<span class="dept-badge">${esc(value)}</span>` : '<span style="color:#bbb">—</span>';
   if (canEdit('responsible_dept')) {
@@ -1118,8 +1136,8 @@ function render(rows) {
       <td>${isManual ? selCell('subcategory', r.subcategory) : selCell('subcategory', r.subcategory)}</td>
       <td class="col-summary">${summaryHtml}</td>
       <td>${resultHtml}</td>
-      <td>${editCell('comment', r.comment, 'Добавить...')}</td>
-      <td>${editCell('comment_manager', r.comment_manager, 'Добавить...')}</td>
+      <td>${commentCell('comment', r.comment, r.comment_author, 'Добавить...')}</td>
+      <td>${commentCell('comment_manager', r.comment_manager, r.comment_manager_author, 'Добавить...')}</td>
       <td class="col-dept">${isManual ? '<span style="color:#bbb">—</span>' : deptCell(r.responsible_dept || '')}</td>
       <td class="col-channel ${chClass}">${channelHtml}</td>
       <td class="col-login" style="color:#aaa">${isManual ? '' : esc(String(r.chat_id))}</td>
@@ -1194,6 +1212,13 @@ async function saveRow(row, feedbackEl) {
   const rowKey = row.dataset.id;
   const fields = collectFields(row);
 
+  // Проставляем автора: берём текущего пользователя если комментарий непустой,
+  // иначе очищаем автора (чтобы не висело имя без комментария)
+  if (fields.comment !== undefined)
+    fields.comment_author = fields.comment ? CURRENT_USER : '';
+  if (fields.comment_manager !== undefined)
+    fields.comment_manager_author = fields.comment_manager ? CURRENT_USER : '';
+
   const url = (rowKey && rowKey.startsWith('m_'))
     ? '/api/log/manual/' + rowKey.slice(2)
     : '/api/log/' + rowKey;
@@ -1214,7 +1239,8 @@ async function saveRow(row, feedbackEl) {
 }
 
 // ── Права доступа (подставляются сервером) ─────────────────────────────────
-const PERMS = %%PERMS%%;
+const PERMS        = %%PERMS%%;
+const CURRENT_USER = "%%USER%%";
 
 // ── Карта категорий / подкатегорий ─────────────────────────────────────────
 const SOURCE_TYPES = ['Клиент', 'ПВЗ', 'Сотрудник', 'Жалоба', 'Заявка'];
@@ -1498,15 +1524,17 @@ load();
 # ---------------------------------------------------------------------------
 
 class DayTrackerEdit(BaseModel):
-    organizer:        Optional[str] = ""
-    responsible:      Optional[str] = ""
-    result:           Optional[str] = ""
-    comment:          Optional[str] = ""
-    comment_manager:  Optional[str] = ""
-    source_type:      Optional[str] = ""
-    category:         Optional[str] = ""
-    subcategory:      Optional[str] = ""
-    responsible_dept: Optional[str] = ""
+    organizer:                Optional[str] = ""
+    responsible:              Optional[str] = ""
+    result:                   Optional[str] = ""
+    comment:                  Optional[str] = ""
+    comment_author:           Optional[str] = ""
+    comment_manager:          Optional[str] = ""
+    comment_manager_author:   Optional[str] = ""
+    source_type:              Optional[str] = ""
+    category:                 Optional[str] = ""
+    subcategory:              Optional[str] = ""
+    responsible_dept:         Optional[str] = ""
 
 
 @router.get("/api/day-tracker")
@@ -1589,7 +1617,9 @@ def api_day_tracker(
                e.result, ifNull(a.resolution_status, ''))                          AS result,
             ifNull(t.responsible_dept, '')                                         AS responsible_dept,
             ifNull(e.comment, '')                                                  AS comment,
+            ifNull(e.comment_author, '')                                           AS comment_author,
             ifNull(e.comment_manager, '')                                          AS comment_manager,
+            ifNull(e.comment_manager_author, '')                                   AS comment_manager_author,
             multiIf(d.source='jivo','Чат',d.source='site_pm','ЛС',d.source='claim','Форма',d.source) AS channel
         FROM dialogs d
         JOIN (
@@ -1644,19 +1674,22 @@ def api_day_tracker(
 def api_day_tracker_edit(chat_id: int, payload: DayTrackerEdit):
     # Общие правки → support_log_edits (те же данные что и в /log)
     log_row = json.dumps({
-        "chat_id":          chat_id,
-        "organizer":        payload.organizer        or "",
-        "responsible":      payload.responsible      or "",
-        "result":           payload.result           or "",
-        "comment":          payload.comment          or "",
-        "comment_manager":  payload.comment_manager  or "",
-        "source_type":      payload.source_type      or "",
-        "category":         payload.category         or "",
-        "subcategory":      payload.subcategory      or "",
+        "chat_id":                  chat_id,
+        "organizer":                payload.organizer               or "",
+        "responsible":              payload.responsible             or "",
+        "result":                   payload.result                  or "",
+        "comment":                  payload.comment                 or "",
+        "comment_author":           payload.comment_author          or "",
+        "comment_manager":          payload.comment_manager         or "",
+        "comment_manager_author":   payload.comment_manager_author  or "",
+        "source_type":              payload.source_type             or "",
+        "category":                 payload.category                or "",
+        "subcategory":              payload.subcategory             or "",
     }, ensure_ascii=False)
     ch_execute(
         "INSERT INTO support_log_edits "
-        "(chat_id, organizer, responsible, result, comment, comment_manager, source_type, category, subcategory) "
+        "(chat_id, organizer, responsible, result, comment, comment_author, "
+        "comment_manager, comment_manager_author, source_type, category, subcategory) "
         "FORMAT JSONEachRow",
         data=log_row.encode("utf-8"),
     )
@@ -1806,6 +1839,8 @@ tbody td:last-child { border-right: none; }
 .editable:focus { background: #fffbea; box-shadow: 0 0 0 2px #f59e0b55; }
 .editable.saving { opacity: .6; }
 .editable.saved  { animation: flash 1s ease forwards; }
+.comment-wrap { display: flex; flex-direction: column; gap: 1px; }
+.comment-author { font-weight: 600; font-size: 11px; color: #888; line-height: 1.2; }
 
 .select-cell {
   cursor: pointer; padding: 3px 5px; border-radius: 4px;
@@ -1981,6 +2016,7 @@ tbody td:last-child { border-right: none; }
 <div class="pagination" id="pagination"></div>
 
 <script>
+const CURRENT_USER = "%%USER%%";
 const today = new Date();
 const week  = new Date(today); week.setDate(today.getDate() - 7);
 document.getElementById('date_from').value = fmt(week);
@@ -2123,6 +2159,11 @@ function renderPagination(page, pages, total) {
   el.innerHTML = btns.join('');
 }
 
+function commentCell(field, value, author, placeholder) {
+  const authorHtml = author ? `<span class="comment-author">${esc(author)}:</span>` : '';
+  return `<div class="comment-wrap">${authorHtml}<div class="editable" contenteditable="true" data-field="${field}" data-orig="${esc(value)}" data-placeholder="${placeholder}">${esc(value)}</div></div>`;
+}
+
 function render(rows) {
   const tbody = document.getElementById('tbody');
   if (!rows.length) {
@@ -2151,8 +2192,8 @@ function render(rows) {
       <td><div class="select-cell" data-field="subcategory" data-value="${esc(r.subcategory)}" onclick="openSelect(this)">${esc(r.subcategory) || '<span style=color:#bbb>—</span>'}</div></td>
       <td class="col-summary"><div class="summary-text" onclick="this.classList.toggle('expanded')">${esc(r.problem_summary)}</div></td>
       <td>${resultHtml}</td>
-      <td><div class="editable" contenteditable="true" data-field="comment" data-orig="${esc(r.comment)}" data-placeholder="Добавить...">${esc(r.comment)}</div></td>
-      <td><div class="editable" contenteditable="true" data-field="comment_manager" data-orig="${esc(r.comment_manager||'')}" data-placeholder="Добавить...">${esc(r.comment_manager||'')}</div></td>
+      <td>${commentCell('comment', r.comment, r.comment_author, 'Добавить...')}</td>
+      <td>${commentCell('comment_manager', r.comment_manager||'', r.comment_manager_author||'', 'Добавить...')}</td>
       <td class="col-dept"><div class="select-cell select-dept" data-field="responsible_dept" data-value="${esc(r.responsible_dept)}" onclick="openSelect(this)">${deptHtml}</div></td>
       <td class="col-channel ${chClass}">${esc(r.channel)}</td>
     </tr>`;
@@ -2200,6 +2241,10 @@ function collectFields(row) {
 async function saveRow(row, feedbackEl) {
   const chatId = row.dataset.id;
   const fields = collectFields(row);
+  if (fields.comment !== undefined)
+    fields.comment_author = fields.comment ? CURRENT_USER : '';
+  if (fields.comment_manager !== undefined)
+    fields.comment_manager_author = fields.comment_manager ? CURRENT_USER : '';
   try {
     const resp = await fetch('/api/day-tracker/' + chatId, {
       method:  'POST',
