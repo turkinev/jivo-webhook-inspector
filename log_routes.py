@@ -137,7 +137,8 @@ _q = lambda s: s.replace("'", "\\'")
 
 def get_manual_rows(df: str, dt: str, operator: str = "", channel: str = "",
                     stype: str = "", category: str = "", subcategory: str = "",
-                    result: str = "") -> list:
+                    result: str = "", author: str = "", login: str = "",
+                    search: str = "", dept: str = "") -> list:
     """Загружает ручные строки из manual_log_entries за период."""
     try:
         where = f"toDate(date) BETWEEN '{df}' AND '{dt}'"
@@ -147,6 +148,21 @@ def get_manual_rows(df: str, dt: str, operator: str = "", channel: str = "",
         if category:    where += f" AND category    = '{_q(category)}'"
         if subcategory: where += f" AND subcategory = '{_q(subcategory)}'"
         if result:      where += f" AND result      = '{_q(result)}'"
+        # Фильтры которых нет у ручных строк — исключаем все ручные строки
+        if dept:        return []   # у ручных строк нет отдела
+        if login and len(login) >= 3: return []  # у ручных строк нет логина
+        if author:      where += f" AND author ILIKE '%{_q(author)}%'"
+        if search and len(search) >= 3:
+            sq = _q(search)
+            where += (
+                f" AND (author ILIKE '%{sq}%'"
+                f" OR operator ILIKE '%{sq}%'"
+                f" OR problem_summary ILIKE '%{sq}%'"
+                f" OR category ILIKE '%{sq}%'"
+                f" OR subcategory ILIKE '%{sq}%'"
+                f" OR result ILIKE '%{sq}%'"
+                f" OR comment ILIKE '%{sq}%')"
+            )
 
         rows = ch_query(f"""
             SELECT
@@ -399,7 +415,8 @@ def api_log(
     # Ручные строки — подмешиваем на первой странице и сортируем вместе с основными
     manual_rows = []
     if page == 1:
-        manual_rows = get_manual_rows(df, dt, operator, channel, stype, category, subcategory, result)
+        manual_rows = get_manual_rows(df, dt, operator, channel, stype, category, subcategory, result,
+                                      author=author, login=login, search=search, dept=dept)
     all_rows = sorted(
         manual_rows + rows,
         key=lambda r: (r.get("date", ""), r.get("time", "")),
@@ -429,7 +446,8 @@ def api_log(
     """)
     channels = sorted({r["channel"] for r in ch_sources + manual_channels if r.get("channel")})
 
-    manual_total = len(get_manual_rows(df, dt, operator, channel, stype, category, subcategory, result)) if page != 1 else len(manual_rows)
+    manual_total = len(get_manual_rows(df, dt, operator, channel, stype, category, subcategory, result,
+                                       author=author, login=login, search=search, dept=dept)) if page != 1 else len(manual_rows)
 
     return JSONResponse({
         "rows":      all_rows,
