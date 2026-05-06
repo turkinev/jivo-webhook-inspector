@@ -1004,16 +1004,36 @@ tbody td:last-child { border-right: none; }
 .comment-author { font-weight: 600; font-size: 11px; color: #888; line-height: 1.2; }
 mark.hl { background: #ffe566; color: inherit; border-radius: 2px; padding: 0 1px; font-style: normal; }
 .select-cell {
-  cursor: pointer; padding: 3px 5px; border-radius: 4px;
+  cursor: pointer; padding: 3px 7px; border-radius: 5px;
   min-width: 60px; min-height: 20px;
   transition: background .15s;
+  display: flex; align-items: center; gap: 4px;
 }
 .select-cell:hover { background: #f0f7ff; }
+.select-cell::after {
+  content: '▾'; font-size: 10px; color: #bbb; flex-shrink: 0;
+  transition: color .15s;
+}
+.select-cell:hover::after { color: #1a73e8; }
 .select-cell.saved { animation: flash 1s ease forwards; }
-.select-cell select {
-  width: 100%; font-size: 12px; border: 1px solid #fbbf24;
-  border-radius: 3px; padding: 2px 4px; background: #fffbea;
-  cursor: pointer;
+/* Cell dropdown overlay */
+.cell-dd {
+  position: fixed; z-index: 9999;
+  background: #fff; border: 1px solid #e0e0e0; border-radius: 10px;
+  box-shadow: 0 8px 32px rgba(0,0,0,.14); padding: 4px 0;
+  min-width: 140px; max-height: 260px; overflow-y: auto;
+}
+.cell-dd-opt {
+  padding: 8px 16px; font-size: 13px; color: #333;
+  cursor: pointer; transition: background .1s;
+  display: flex; align-items: center; gap: 8px;
+}
+.cell-dd-opt:hover { background: #f0f7ff; color: #1a73e8; }
+.cell-dd-opt.active {
+  background: #e8f0fe; color: #1a73e8; font-weight: 600;
+}
+.cell-dd-opt.active::before {
+  content: '✓'; font-size: 11px; color: #1a73e8;
 }
 @keyframes flash {
   0%   { background: #d1fae5; }
@@ -1723,8 +1743,18 @@ function renderCellInner(field, val) {
 }
 
 // ── Открыть выпадающий список ──────────────────────────────────────────────
+let _activeCellDd = null;
+
+function closeCellDd() {
+  if (_activeCellDd) {
+    _activeCellDd.remove();
+    _activeCellDd = null;
+  }
+}
+
 function openSelect(cell) {
-  if (cell.querySelector('select')) return; // уже открыт
+  // Закрыть предыдущий дропдаун
+  closeCellDd();
 
   const field   = cell.dataset.field;
   const current = cell.dataset.value || '';
@@ -1747,34 +1777,46 @@ function openSelect(cell) {
     options = DEPTS;
   }
 
-  const sel = document.createElement('select');
-  sel.innerHTML = '<option value="">— выбрать —</option>' +
-    options.map(v => `<option value="${esc(v)}"${v === current ? ' selected' : ''}>${esc(v)}</option>`).join('');
+  if (!options.length) return;
 
-  cell.innerHTML = '';
-  cell.appendChild(sel);
-  sel.focus();
+  const rect = cell.getBoundingClientRect();
+  const dd = document.createElement('div');
+  dd.className = 'cell-dd';
+  dd.style.top  = (rect.bottom + window.scrollY + 2) + 'px';
+  dd.style.left = (rect.left + window.scrollX) + 'px';
 
-  async function apply() {
-    const val = sel.value;
-    cell.dataset.value = val;
-    cell.innerHTML = renderCellInner(field, val);
-    cell.onclick = () => openSelect(cell); // вернуть обработчик
+  options.forEach(v => {
+    const opt = document.createElement('div');
+    opt.className = 'cell-dd-opt' + (v === current ? ' active' : '');
+    opt.textContent = v;
+    opt.addEventListener('mousedown', async e => {
+      e.preventDefault();
+      e.stopPropagation();
+      closeCellDd();
+      cell.dataset.value = v;
+      cell.innerHTML = renderCellInner(field, v);
 
-    // Если сменили категорию — сбрасываем подкатегорию
-    if (field === 'category') {
-      const subCell = row.querySelector('[data-field="subcategory"]');
-      if (subCell) {
-        subCell.dataset.value = '';
-        subCell.innerHTML = '<span style="color:#bbb">—</span>';
+      // Если сменили категорию — сбрасываем подкатегорию
+      if (field === 'category') {
+        const subCell = row.querySelector('[data-field="subcategory"]');
+        if (subCell) {
+          subCell.dataset.value = '';
+          subCell.innerHTML = '<span style="color:#bbb">—</span>';
+        }
       }
-    }
 
-    await saveRow(row, cell);
-  }
+      await saveRow(row, cell);
+    });
+    dd.appendChild(opt);
+  });
 
-  sel.addEventListener('change', apply);
-  sel.addEventListener('blur',   apply);
+  document.body.appendChild(dd);
+  _activeCellDd = dd;
+
+  // Закрыть при клике вне
+  setTimeout(() => {
+    document.addEventListener('click', closeCellDd, { once: true });
+  }, 0);
 }
 
 // ── Ресайз столбцов ────────────────────────────────────────────────────────
@@ -2385,16 +2427,36 @@ tbody td:last-child { border-right: none; }
 mark.hl { background: #ffe566; color: inherit; border-radius: 2px; padding: 0 1px; font-style: normal; }
 
 .select-cell {
-  cursor: pointer; padding: 3px 5px; border-radius: 4px;
+  cursor: pointer; padding: 3px 7px; border-radius: 5px;
   min-width: 60px; min-height: 20px;
   transition: background .15s;
+  display: flex; align-items: center; gap: 4px;
 }
 .select-cell:hover { background: #f0f7ff; }
+.select-cell::after {
+  content: '▾'; font-size: 10px; color: #bbb; flex-shrink: 0;
+  transition: color .15s;
+}
+.select-cell:hover::after { color: #1a73e8; }
 .select-cell.saved { animation: flash 1s ease forwards; }
-.select-cell select {
-  width: 100%; font-size: 12px; border: 1px solid #fbbf24;
-  border-radius: 3px; padding: 2px 4px; background: #fffbea;
-  cursor: pointer;
+/* Cell dropdown overlay */
+.cell-dd {
+  position: fixed; z-index: 9999;
+  background: #fff; border: 1px solid #e0e0e0; border-radius: 10px;
+  box-shadow: 0 8px 32px rgba(0,0,0,.14); padding: 4px 0;
+  min-width: 140px; max-height: 260px; overflow-y: auto;
+}
+.cell-dd-opt {
+  padding: 8px 16px; font-size: 13px; color: #333;
+  cursor: pointer; transition: background .1s;
+  display: flex; align-items: center; gap: 8px;
+}
+.cell-dd-opt:hover { background: #f0f7ff; color: #1a73e8; }
+.cell-dd-opt.active {
+  background: #e8f0fe; color: #1a73e8; font-weight: 600;
+}
+.cell-dd-opt.active::before {
+  content: '✓'; font-size: 11px; color: #1a73e8;
 }
 
 /* Ответственный отдел — своя подсветка выпадашки */
@@ -2897,8 +2959,18 @@ async function saveRow(row, feedbackEl) {
   }
 }
 
+let _activeCellDd = null;
+
+function closeCellDd() {
+  if (_activeCellDd) {
+    _activeCellDd.remove();
+    _activeCellDd = null;
+  }
+}
+
 function openSelect(cell) {
-  if (cell.querySelector('select')) return;
+  closeCellDd();
+
   const field   = cell.dataset.field;
   const current = cell.dataset.value || '';
   const row     = cell.closest('tr');
@@ -2915,40 +2987,49 @@ function openSelect(cell) {
     options = DEPTS;
   }
 
-  const sel = document.createElement('select');
-  sel.innerHTML = '<option value="">— выбрать —</option>' +
-    options.map(v => `<option value="${esc(v)}"${v === current ? ' selected' : ''}>${esc(v)}</option>`).join('');
+  if (!options.length) return;
 
-  cell.innerHTML = '';
-  cell.appendChild(sel);
-  sel.focus();
+  const rect = cell.getBoundingClientRect();
+  const dd = document.createElement('div');
+  dd.className = 'cell-dd';
+  dd.style.top  = (rect.bottom + window.scrollY + 2) + 'px';
+  dd.style.left = (rect.left + window.scrollX) + 'px';
 
-  async function apply() {
-    const val = sel.value;
-    cell.dataset.value = val;
+  options.forEach(v => {
+    const opt = document.createElement('div');
+    opt.className = 'cell-dd-opt' + (v === current ? ' active' : '');
+    opt.textContent = v;
+    opt.addEventListener('mousedown', async e => {
+      e.preventDefault();
+      e.stopPropagation();
+      closeCellDd();
+      cell.dataset.value = v;
 
-    if (field === 'responsible_dept') {
-      cell.innerHTML = val
-        ? `<span class="dept-badge">${esc(val)}</span>`
-        : '<span style="color:#bbb">—</span>';
-    } else {
-      cell.innerHTML = val ? esc(val) : '<span style="color:#bbb">—</span>';
-    }
-    cell.onclick = () => openSelect(cell);
-
-    if (field === 'category') {
-      const subCell = row.querySelector('[data-field="subcategory"]');
-      if (subCell) {
-        subCell.dataset.value = '';
-        subCell.innerHTML = '<span style="color:#bbb">—</span>';
+      if (field === 'responsible_dept') {
+        cell.innerHTML = `<span class="dept-badge">${esc(v)}</span>`;
+      } else {
+        cell.innerHTML = esc(v);
       }
-    }
 
-    await saveRow(row, cell);
-  }
+      if (field === 'category') {
+        const subCell = row.querySelector('[data-field="subcategory"]');
+        if (subCell) {
+          subCell.dataset.value = '';
+          subCell.innerHTML = '<span style="color:#bbb">—</span>';
+        }
+      }
 
-  sel.addEventListener('change', apply);
-  sel.addEventListener('blur',   apply);
+      await saveRow(row, cell);
+    });
+    dd.appendChild(opt);
+  });
+
+  document.body.appendChild(dd);
+  _activeCellDd = dd;
+
+  setTimeout(() => {
+    document.addEventListener('click', closeCellDd, { once: true });
+  }, 0);
 }
 
 // ── Ресайз столбцов ────────────────────────────────────────────────────────
