@@ -298,9 +298,9 @@ def api_log(
         where += " AND d.source = 'jivo'"
     elif channel == "ЛС":
         where += " AND d.source = 'site_pm'"
-    elif channel == "Форма":
+    elif channel == "Жалоба":
         where += " AND d.source = 'claim'"
-    elif channel in ("Email", "Телефон", "Другой"):
+    elif channel in ("Таблица", "Заявка", "Email", "Telegram", "ВК"):
         where += " AND 1=0"  # только ручные строки — основные диалоги не берём
     # Фильтры по вычисляемым полям (с учётом правок из support_log_edits)
     if stype:
@@ -377,7 +377,7 @@ def api_log(
             ifNull(e.comment_manager, '')                                          AS comment_manager,
             ifNull(e.comment_manager_author, '')                                   AS comment_manager_author,
             ifNull(t.responsible_dept, '')                                         AS responsible_dept,
-            multiIf(d.source='jivo','Чат',d.source='site_pm','ЛС',d.source='claim','Форма',d.source) AS channel
+            multiIf(d.source='jivo','Чат',d.source='site_pm','ЛС',d.source='claim','Жалоба',d.source) AS channel
         FROM dialogs d
         JOIN (
             SELECT chat_id, max(received_at) AS ts
@@ -412,7 +412,7 @@ def api_log(
 
     # Каналы — из диалогов + из ручных строк
     ch_sources = ch_query("""
-        SELECT multiIf(source='jivo','Чат',source='site_pm','ЛС',source='claim','Форма',source) AS channel
+        SELECT multiIf(source='jivo','Чат',source='site_pm','ЛС',source='claim','Жалоба',source) AS channel
         FROM dialogs
         GROUP BY source
         FORMAT JSONEachRow
@@ -472,7 +472,7 @@ def api_create_manual():
     today  = str(date.today())
     ch_execute(
         "INSERT INTO manual_log_entries (id, date, channel) FORMAT JSONEachRow",
-        data=json.dumps({"id": new_id, "date": today, "channel": "Другой"}).encode("utf-8"),
+        data=json.dumps({"id": new_id, "date": today, "channel": "Таблица"}).encode("utf-8"),
     )
     return JSONResponse({"ok": True, "id": new_id, "date": today})
 
@@ -505,7 +505,7 @@ def api_edit_manual(row_id: int, payload: ManualEditPayload):
         "id":            row_id,
         "date":          payload.date or today,
         "time":          payload.time or "",
-        "channel":       payload.channel or "Другой",
+        "channel":       payload.channel or "Таблица",
         "operator":      payload.operator or "",
         "source_type":   payload.source_type or "",
         "author":        payload.author or "",
@@ -1441,7 +1441,7 @@ function render(rows) {
   tbody.innerHTML = rows.map(r => {
     const rowKey  = r.row_key !== undefined ? r.row_key : String(r.chat_id);
     const isManual = !!r.is_manual;
-    const chClass = r.channel === 'Чат' ? 'ch-chat' : r.channel === 'ЛС' ? 'ch-ls' : r.channel === 'Форма' ? 'ch-form' : '';
+    const chClass = r.channel === 'Чат' ? 'ch-chat' : r.channel === 'ЛС' ? 'ch-ls' : r.channel === 'Жалоба' ? 'ch-form' : '';
     const bc = badgeClass(r.result);
 
     // Результат: manual — всегда select; manager — select; support — badge
@@ -1648,7 +1648,7 @@ function openSelect(cell) {
   } else if (field === 'result') {
     options = ['Решено', 'Не решено', 'Частично', 'Эскалация'];
   } else if (field === 'channel') {
-    options = ['Чат', 'ЛС', 'Email', 'Телефон', 'Другой'];
+    options = ['Таблица', 'Заявка', 'ЛС', 'Email', 'Telegram', 'ВК', 'Жалоба'];
   } else if (field === 'responsible_dept') {
     options = DEPTS;
   }
@@ -1856,7 +1856,7 @@ function prependManualRow(id, dateStr) {
     <td><div class="editable" contenteditable="true" data-field="problem_summary" data-orig="" data-placeholder="Суть обращения"></div></td>
     <td><div class="select-cell" data-field="result"  data-value="" onclick="openSelect(this)"><span style="color:#bbb">—</span></div></td>
     <td><div class="editable" contenteditable="true" data-field="comment" data-orig="" data-placeholder="Добавить..."></div></td>
-    <td class="col-channel"><div class="select-cell" data-field="channel" data-value="Другой" onclick="openSelect(this)">Другой</div></td>
+    <td class="col-channel"><div class="select-cell" data-field="channel" data-value="Таблица" onclick="openSelect(this)">Таблица</div></td>
     <td></td>
   `;
   tr.querySelectorAll('.editable').forEach(el => el.addEventListener('blur', onBlur));
@@ -1921,7 +1921,7 @@ def api_day_tracker(
         where += " AND d.source = 'jivo'"
     elif channel == "ЛС":
         where += " AND d.source = 'site_pm'"
-    elif channel == "Форма":
+    elif channel == "Жалоба":
         where += " AND d.source = 'claim'"
     if stype:
         where += f" AND if(e.source_type!='', e.source_type, ifNull(a.source_type,'')) = '{q(stype)}'"
@@ -1994,7 +1994,7 @@ def api_day_tracker(
             ifNull(e.comment_author, '')                                           AS comment_author,
             ifNull(e.comment_manager, '')                                          AS comment_manager,
             ifNull(e.comment_manager_author, '')                                   AS comment_manager_author,
-            multiIf(d.source='jivo','Чат',d.source='site_pm','ЛС',d.source='claim','Форма',d.source) AS channel
+            multiIf(d.source='jivo','Чат',d.source='site_pm','ЛС',d.source='claim','Жалоба',d.source) AS channel
         FROM dialogs d
         JOIN (
             SELECT chat_id, max(received_at) AS ts
@@ -2020,7 +2020,7 @@ def api_day_tracker(
     """)
 
     ch_sources = ch_query("""
-        SELECT multiIf(source='jivo','Чат',source='site_pm','ЛС',source='claim','Форма',source) AS channel
+        SELECT multiIf(source='jivo','Чат',source='site_pm','ЛС',source='claim','Жалоба',source) AS channel
         FROM dialogs
         GROUP BY source
         FORMAT JSONEachRow
