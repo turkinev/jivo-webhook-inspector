@@ -985,7 +985,9 @@ function initFilters() {
   // Автопоиск по Автору, Логину и Поиску от 3 символов с debounce 400ms
   let _searchTimer = null;
   ['filter_author', 'filter_login', 'filter_search'].forEach(id => {
-    document.getElementById(id).addEventListener('input', function() {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('input', function() {
       clearTimeout(_searchTimer);
       const val = this.value;
       if (val.length === 0 || val.length >= 3) {
@@ -1593,8 +1595,8 @@ function prependManualRow(id, dateStr) {
   tr.querySelector('.editable').focus();
 }
 
-initFilters();
-initResizableColumns();
+try { initFilters(); } catch(e) { console.error('initFilters error:', e); }
+try { initResizableColumns(); } catch(e) { console.error('initResizableColumns error:', e); }
 load();
 </script>
 </body>
@@ -2525,13 +2527,15 @@ function restoreColWidths() {
   } catch (_) {}
 }
 
-initFilters();
-initResizableColumns();
+try { initFilters(); } catch(e) { console.error('initFilters error:', e); }
+try { initResizableColumns(); } catch(e) { console.error('initResizableColumns error:', e); }
 
 // Автопоиск по Автору, Логину и Поиску от 3 символов с debounce 400ms
 let _searchTimer = null;
 ['filter_author', 'filter_login', 'filter_search'].forEach(id => {
-  document.getElementById(id).addEventListener('input', function() {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.addEventListener('input', function() {
     clearTimeout(_searchTimer);
     const val = this.value;
     if (val.length === 0 || val.length >= 3) {
