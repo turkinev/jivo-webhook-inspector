@@ -1745,15 +1745,24 @@ function renderCellInner(field, val) {
 // ── Открыть выпадающий список ──────────────────────────────────────────────
 let _activeCellDd = null;
 
+function _cellDdOutside(e) {
+  if (!_activeCellDd) return;
+  // Не закрываем если клик внутри дропдауна или по другой select-cell
+  // (select-cell обработает сама через openSelect → closeCellDd)
+  if (_activeCellDd.contains(e.target)) return;
+  if (e.target.closest && e.target.closest('.select-cell')) return;
+  closeCellDd();
+}
+
 function closeCellDd() {
   if (_activeCellDd) {
     _activeCellDd.remove();
     _activeCellDd = null;
+    document.removeEventListener('click', _cellDdOutside);
   }
 }
 
 function openSelect(cell) {
-  // Закрыть предыдущий дропдаун
   closeCellDd();
 
   const field   = cell.dataset.field;
@@ -1796,7 +1805,6 @@ function openSelect(cell) {
       cell.dataset.value = v;
       cell.innerHTML = renderCellInner(field, v);
 
-      // Если сменили категорию — сбрасываем подкатегорию
       if (field === 'category') {
         const subCell = row.querySelector('[data-field="subcategory"]');
         if (subCell) {
@@ -1813,9 +1821,9 @@ function openSelect(cell) {
   document.body.appendChild(dd);
   _activeCellDd = dd;
 
-  // Закрыть при клике вне
+  // Добавляем обработчик закрытия — после того как текущий click отработает
   setTimeout(() => {
-    document.addEventListener('click', closeCellDd, { once: true });
+    document.addEventListener('click', _cellDdOutside);
   }, 0);
 }
 
@@ -2961,10 +2969,18 @@ async function saveRow(row, feedbackEl) {
 
 let _activeCellDd = null;
 
+function _cellDdOutside(e) {
+  if (!_activeCellDd) return;
+  if (_activeCellDd.contains(e.target)) return;
+  if (e.target.closest && e.target.closest('.select-cell')) return;
+  closeCellDd();
+}
+
 function closeCellDd() {
   if (_activeCellDd) {
     _activeCellDd.remove();
     _activeCellDd = null;
+    document.removeEventListener('click', _cellDdOutside);
   }
 }
 
@@ -3028,7 +3044,7 @@ function openSelect(cell) {
   _activeCellDd = dd;
 
   setTimeout(() => {
-    document.addEventListener('click', closeCellDd, { once: true });
+    document.addEventListener('click', _cellDdOutside);
   }, 0);
 }
 
