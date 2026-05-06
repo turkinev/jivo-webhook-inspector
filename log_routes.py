@@ -300,8 +300,8 @@ def api_log(
         where += " AND d.source = 'site_pm'"
     elif channel == "Жалоба":
         where += " AND d.source = 'claim'"
-    elif channel in ("Таблица", "Заявка", "Email", "Telegram", "ВК"):
-        where += " AND 1=0"  # только ручные строки — основные диалоги не берём
+    elif channel:
+        where += " AND 1=0"  # любой другой канал — только ручные строки
     # Фильтры по вычисляемым полям (с учётом правок из support_log_edits)
     if stype:
         where += f" AND if(e.source_type!=''  , e.source_type , ifNull(a.source_type,''))  = '{q(stype)}'"
