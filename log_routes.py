@@ -492,10 +492,16 @@ def log_page(user: dict = Depends(require_user)):
         from fastapi.responses import HTMLResponse as _HR
         name = user.get("name") or user.get("username", "")
         return _HR(
-            f"<h2 style='font-family:sans-serif;margin:60px auto;text-align:center'>"
-            f"403 — Доступ запрещён<br>"
-            f"<span style='font-size:14px;color:#888'>Пользователь <b>{name}</b> не состоит "
-            f"в группах communication-managers или communication-support</span></h2>",
+            f"<div style='font-family:sans-serif;margin:80px auto;text-align:center'>"
+            f"<h2>403 — Доступ запрещён</h2>"
+            f"<p style='font-size:14px;color:#888;margin:12px 0'>Пользователь <b>{name}</b> не состоит "
+            f"в группах communication-managers или communication-support</p>"
+            f"<p style='font-size:13px;color:#aaa;margin:6px 0'>Если вас только что добавили в группу — "
+            f"выйдите и войдите снова, чтобы сессия обновилась.</p>"
+            f"<a href='/auth/logout' style='display:inline-block;margin-top:18px;padding:8px 22px;"
+            f"background:#e74c3c;color:#fff;border-radius:6px;text-decoration:none;font-size:14px'>"
+            f"Выйти и войти снова</a>"
+            f"</div>",
             status_code=403,
         )
     return (
