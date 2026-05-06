@@ -879,6 +879,7 @@ html, body {
 }
 .filter-sep { width: 1px; height: 22px; background: #d8d8d8; margin: 0 2px; }
 .filterbar-actions { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.filterbar-count { font-size: 12px; color: #888; white-space: nowrap; order: -1; margin-right: 4px; }
 .count { font-size: 12px; color: #888; white-space: nowrap; }
 .btn {
   background: #1a73e8; color: #fff; border: none; border-radius: 6px;
@@ -1190,8 +1191,8 @@ tr.dialog-row td { padding: 0 !important; background: #f8f9fa; border-bottom: 2p
   <div class="filterbar-actions">
     <button class="btn" onclick="load()">Применить</button>
     <button class="btn btn-green" id="btn_add" onclick="addManualRow()">+ Строка</button>
-    <span class="count" id="count"></span>
   </div>
+  <span class="count filterbar-count" id="count"></span>
 </div>
 
 <div class="wrap">
@@ -2250,6 +2251,7 @@ html, body {
 }
 .filter-sep { width: 1px; height: 22px; background: #d8d8d8; margin: 0 2px; }
 .filterbar-actions { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.filterbar-count { font-size: 12px; color: #888; white-space: nowrap; order: -1; margin-right: 4px; }
 .count { font-size: 12px; color: #888; white-space: nowrap; }
 .btn {
   background: #1a73e8; color: #fff; border: none; border-radius: 6px;
@@ -2503,8 +2505,8 @@ mark.hl { background: #ffe566; color: inherit; border-radius: 2px; padding: 0 1p
   </div>
   <div class="filterbar-actions">
     <button class="btn" onclick="load()">Применить</button>
-    <span class="count" id="count"></span>
   </div>
+  <span class="count filterbar-count" id="count"></span>
 </div>
 
 <div class="wrap">
