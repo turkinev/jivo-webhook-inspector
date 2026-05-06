@@ -1073,28 +1073,26 @@ async function load(resetPage = true) {
 function highlightSearch(term) {
   if (!term || term.length < 3) return;
   const tbody = document.getElementById('tbody');
-  const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const regex = new RegExp(escaped, 'gi');
+  const lower = term.toLowerCase();
 
   function walkNode(node) {
-    if (node.nodeType === 3) { // текстовый узел
+    if (node.nodeType === 3) {
       const text = node.textContent;
-      if (!regex.test(text)) { regex.lastIndex = 0; return; }
-      regex.lastIndex = 0;
+      const ltext = text.toLowerCase();
+      if (ltext.indexOf(lower) === -1) return;
       const frag = document.createDocumentFragment();
-      let last = 0, m;
-      while ((m = regex.exec(text)) !== null) {
-        if (m.index > last) frag.appendChild(document.createTextNode(text.slice(last, m.index)));
+      let pos = 0, i;
+      while ((i = ltext.indexOf(lower, pos)) !== -1) {
+        if (i > pos) frag.appendChild(document.createTextNode(text.slice(pos, i)));
         const mark = document.createElement('mark');
         mark.className = 'hl';
-        mark.textContent = m[0];
+        mark.textContent = text.slice(i, i + term.length);
         frag.appendChild(mark);
-        last = m.index + m[0].length;
+        pos = i + term.length;
       }
-      if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+      if (pos < text.length) frag.appendChild(document.createTextNode(text.slice(pos)));
       node.parentNode.replaceChild(frag, node);
     } else if (node.nodeType === 1) {
-      // Пропускаем contenteditable — чтобы не ломать blur/save
       if (node.contentEditable === 'true' || node.tagName === 'SELECT' || node.tagName === 'INPUT') return;
       Array.from(node.childNodes).forEach(walkNode);
     }
