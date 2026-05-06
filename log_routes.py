@@ -1161,13 +1161,29 @@ async function onBlur(e) {
   // чтобы CSS :empty::before (плейсхолдер) снова сработал
   if (val === '') el.innerHTML = '';
 
-  const chatId = row.dataset.id;
-  const fields = collectFields(row);
-
   el.dataset.orig = val;
   el.classList.add('saving');
   await saveRow(row, el);
   el.classList.remove('saving');
+
+  // Обновляем отображение автора прямо в DOM после сохранения
+  const field = el.dataset.field;
+  if (field === 'comment' || field === 'comment_manager') {
+    const wrap = el.closest('.comment-wrap');
+    if (wrap) {
+      let authorSpan = wrap.querySelector('.comment-author');
+      if (val) {
+        if (!authorSpan) {
+          authorSpan = document.createElement('span');
+          authorSpan.className = 'comment-author';
+          wrap.insertBefore(authorSpan, wrap.firstChild);
+        }
+        authorSpan.textContent = CURRENT_USER + ':';
+      } else if (authorSpan) {
+        authorSpan.remove();
+      }
+    }
+  }
 }
 
 // ── Логин из имени автора ──────────────────────────────────────────────────
@@ -2214,6 +2230,24 @@ async function onBlur(e) {
   el.classList.add('saving');
   await saveRow(el.closest('tr'), el);
   el.classList.remove('saving');
+
+  const field = el.dataset.field;
+  if (field === 'comment' || field === 'comment_manager') {
+    const wrap = el.closest('.comment-wrap');
+    if (wrap) {
+      let authorSpan = wrap.querySelector('.comment-author');
+      if (val) {
+        if (!authorSpan) {
+          authorSpan = document.createElement('span');
+          authorSpan.className = 'comment-author';
+          wrap.insertBefore(authorSpan, wrap.firstChild);
+        }
+        authorSpan.textContent = CURRENT_USER + ':';
+      } else if (authorSpan) {
+        authorSpan.remove();
+      }
+    }
+  }
 }
 
 function extractLogin(author, sourceType) {
