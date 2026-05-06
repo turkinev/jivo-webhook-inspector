@@ -93,6 +93,11 @@ def ensure_table():
             ch_execute(f"ALTER TABLE support_log_edits ADD COLUMN IF NOT EXISTS {col} String DEFAULT ''")
         except Exception:
             pass
+    for col in ["rating", "complexity"]:
+        try:
+            ch_execute(f"ALTER TABLE support_log_edits ADD COLUMN IF NOT EXISTS {col} UInt8 DEFAULT 0")
+        except Exception:
+            pass
     ch_execute("""
         CREATE TABLE IF NOT EXISTS day_tracker_edits (
             chat_id          UInt64,
@@ -204,6 +209,8 @@ COLUMN_DEFS = [
     ("subcategory",     "Подкатегория"),
     ("problem_summary", "Причина обращения"),
     ("result",          "Результат"),
+    ("rating",          "Оценка"),
+    ("complexity",      "Сложность"),
     ("comment",         "Комм. поддержки"),
     ("comment_manager", "Комм. менеджера"),
     ("responsible_dept","Отв. отдел"),
@@ -220,6 +227,7 @@ _DEFAULT_COL_PERMS = {
         "problem_summary": "view", "result": "edit", "comment": "view",
         "comment_manager": "edit", "responsible_dept": "edit",
         "channel": "view", "chat_id": "view",
+        "rating": "edit", "complexity": "edit",
     },
     "communication-support": {
         "date": "view", "time": "view", "operator": "view",
@@ -228,6 +236,7 @@ _DEFAULT_COL_PERMS = {
         "problem_summary": "view", "result": "view", "comment": "edit",
         "comment_manager": "view", "responsible_dept": "edit",
         "channel": "view", "chat_id": "view",
+        "rating": "view", "complexity": "view",
     },
 }
 
@@ -393,7 +402,9 @@ def api_log(
             ifNull(e.comment_manager, '')                                          AS comment_manager,
             ifNull(e.comment_manager_author, '')                                   AS comment_manager_author,
             ifNull(t.responsible_dept, '')                                         AS responsible_dept,
-            multiIf(d.source='jivo','Чат',d.source='site_pm','ЛС',d.source='claim','Жалоба',d.source) AS channel
+            multiIf(d.source='jivo','Чат',d.source='site_pm','ЛС',d.source='claim','Жалоба',d.source) AS channel,
+            ifNull(e.rating,     0)                                                AS rating,
+            ifNull(e.complexity, 0)                                                AS complexity
         FROM dialogs d
         JOIN (
             SELECT chat_id, max(received_at) AS ts
@@ -562,6 +573,8 @@ class EditPayload(BaseModel):
     category:                 Optional[str] = ""
     subcategory:              Optional[str] = ""
     responsible_dept:         Optional[str] = None   # None = поле не пришло → не трогаем day_tracker_edits
+    rating:                   Optional[int] = None   # None = не менялось
+    complexity:               Optional[int] = None   # None = не менялось
 
 
 @router.post("/api/log/{chat_id}")
@@ -578,11 +591,14 @@ def api_edit(chat_id: int, payload: EditPayload):
         "source_type":              payload.source_type             or "",
         "category":                 payload.category                or "",
         "subcategory":              payload.subcategory             or "",
+        "rating":                   int(payload.rating)     if payload.rating     is not None else 0,
+        "complexity":               int(payload.complexity) if payload.complexity is not None else 0,
     }, ensure_ascii=False)
     ch_execute(
         "INSERT INTO support_log_edits "
         "(chat_id, organizer, responsible, result, comment, comment_author, "
-        "comment_manager, comment_manager_author, source_type, category, subcategory) "
+        "comment_manager, comment_manager_author, source_type, category, subcategory, "
+        "rating, complexity) "
         "FORMAT JSONEachRow",
         data=row.encode("utf-8"),
     )
@@ -1069,6 +1085,21 @@ mark.hl { background: #ffe566; color: inherit; border-radius: 2px; padding: 0 1p
 .badge-эскалация  { background: #ede9fe; color: #5b21b6; }
 .badge-other      { background: #f3f4f6; color: #374151; }
 
+/* Rating / Complexity widget */
+.rating-widget { display: flex; gap: 2px; align-items: center; }
+.rating-dot {
+  width: 22px; height: 22px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700; cursor: default;
+  border: 1.5px solid #e0e0e0; color: #bbb; background: #fafafa;
+  transition: background .15s, border-color .15s, color .15s;
+  user-select: none; flex-shrink: 0;
+}
+.rating-dot.filled-rating     { background: #e8f5e9; border-color: #66bb6a; color: #2e7d32; }
+.rating-dot.filled-complexity { background: #fff3e0; border-color: #ffa726; color: #e65100; }
+.rating-dot.clickable { cursor: pointer; }
+.rating-dot.clickable:hover   { border-color: #1a73e8; color: #1a73e8; background: #e8f0fe; }
+
 /* Problem summary truncation */
 .summary-text {
   display: -webkit-box;
@@ -1260,6 +1291,8 @@ tr.dialog-row td { padding: 0 !important; background: #f8f9fa; border-bottom: 2p
         <th data-col="subcategory">Подкатегория</th>
         <th data-col="problem_summary">Причина обращения</th>
         <th data-col="result">Результат</th>
+        <th data-col="rating" style="text-align:center">Оценка</th>
+        <th data-col="complexity" style="text-align:center">Сложность</th>
         <th data-col="comment">Комм. поддержки</th>
         <th data-col="comment_manager">Комм. менеджера</th>
         <th data-col="responsible_dept" class="col-dept">Отв. отдел</th>
@@ -1595,6 +1628,14 @@ function render(rows) {
       ? `<div class="editable" contenteditable="true" data-field="problem_summary" data-orig="${esc(r.problem_summary)}" data-placeholder="Суть обращения">${esc(r.problem_summary)}</div>`
       : `<div class="summary-text" onclick="this.classList.toggle('expanded')">${esc(r.problem_summary)}</div>`;
 
+    const ratingVal     = parseInt(r.rating     || 0);
+    const complexityVal = parseInt(r.complexity || 0);
+    const canRate = !isManual && canEdit('rating');
+    const ratingHtml     = isManual ? '<span style="color:#bbb">—</span>'
+      : `<td data-field="rating"     data-value="${ratingVal}"    style="text-align:center">${renderRatingWidget('rating',     ratingVal,     canRate)}</td>`;
+    const complexityHtml = isManual ? '<span style="color:#bbb">—</span>'
+      : `<td data-field="complexity" data-value="${complexityVal}" style="text-align:center">${renderRatingWidget('complexity', complexityVal, canRate)}</td>`;
+
     return `<tr data-id="${rowKey}"${isManual ? ' data-manual="1"' : ''}>
       <td class="col-date">${dateHtml}</td>
       <td class="col-time">${timeHtml}</td>
@@ -1607,6 +1648,7 @@ function render(rows) {
       <td>${isManual ? selCell('subcategory', r.subcategory) : selCell('subcategory', r.subcategory)}</td>
       <td class="col-summary">${summaryHtml}</td>
       <td>${resultHtml}</td>
+      ${isManual ? '<td><span style="color:#bbb">—</span></td><td><span style="color:#bbb">—</span></td>' : `<td data-field="rating" data-value="${ratingVal}" style="text-align:center">${renderRatingWidget('rating', ratingVal, canRate)}</td><td data-field="complexity" data-value="${complexityVal}" style="text-align:center">${renderRatingWidget('complexity', complexityVal, canRate)}</td>`}
       <td>${commentCell('comment', r.comment, r.comment_author, 'Добавить...')}</td>
       <td>${commentCell('comment_manager', r.comment_manager, r.comment_manager_author, 'Добавить...')}</td>
       <td class="col-dept">${isManual ? '<span style="color:#bbb">—</span>' : deptCell(r.responsible_dept || '')}</td>
@@ -1767,6 +1809,45 @@ function renderCellInner(field, val) {
   return esc(val);
 }
 
+// ── Рейтинг: рендер и клик ──────────────────────────────────────────────────
+function renderRatingWidget(field, value, canEdit) {
+  const filledClass = field === 'rating' ? 'filled-rating' : 'filled-complexity';
+  const dots = [1, 2, 3].map(n => {
+    const filled = n <= value ? filledClass : '';
+    const click  = canEdit ? `onclick="setRating(this,${n})"` : '';
+    return `<span class="rating-dot ${filled}${canEdit ? ' clickable' : ''}" data-n="${n}" ${click}>${n}</span>`;
+  }).join('');
+  return `<div class="rating-widget">${dots}</div>`;
+}
+
+async function setRating(dot, n) {
+  const td    = dot.closest('td');
+  const row   = dot.closest('tr');
+  const field = td.dataset.field;   // 'rating' или 'complexity'
+  const rowId = row.dataset.id;
+  if (!rowId || rowId.startsWith('m_')) return; // ручные строки — не трогаем
+
+  // Toggle: повторный клик на ту же цифру сбрасывает в 0
+  const current = parseInt(td.dataset.value || '0');
+  const newVal  = (current === n) ? 0 : n;
+  td.dataset.value = newVal;
+  td.innerHTML = renderRatingWidget(field, newVal, true);
+
+  const chatId = row.dataset.id;
+  const body   = {};
+  body[field]  = newVal;
+  try {
+    await fetch(\`/log/api/log/\${chatId}\`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    });
+    // вспышка сохранения
+    td.querySelectorAll('.rating-dot').forEach(d => d.classList.add('saved'));
+    setTimeout(() => td.querySelectorAll('.rating-dot').forEach(d => d.classList.remove('saved')), 800);
+  } catch(e) { console.error('rating save error', e); }
+}
+
 // ── Открыть выпадающий список ──────────────────────────────────────────────
 let _activeCellDd = null;
 let _activeCellSrc = null;
@@ -1858,8 +1939,8 @@ function openSelect(cell) {
 // ── Ресайз столбцов ────────────────────────────────────────────────────────
 const COL_WIDTHS_KEY = 'log_col_widths_v2';
 
-// Дата, Время, Оператор, Тип автора, Автор, Логин, Тип, Категория, Подкатегория, Причина обращения, Результат, Комментарий, Отв.отдел, Канал, № обращения
-const DEFAULT_COL_WIDTHS = [90, 55, 90, 90, 100, 110, 90, 120, 140, 340, 90, 140, 140, 110, 55, 90];
+// Дата, Время, Оператор, Тип автора, Автор, Логин, Тип, Категория, Подкатегория, Причина обращения, Результат, Оценка, Сложность, Комм.поддержки, Комм.менеджера, Отв.отдел, Канал, № обращения
+const DEFAULT_COL_WIDTHS = [90, 55, 90, 90, 100, 110, 90, 120, 140, 340, 90, 70, 70, 140, 140, 110, 55, 90];
 
 function initResizableColumns() {
   const ths = [...document.querySelectorAll('thead th')];
@@ -2521,6 +2602,21 @@ mark.hl { background: #ffe566; color: inherit; border-radius: 2px; padding: 0 1p
   background: #e0e7ff; color: #3730a3;
 }
 
+/* Rating / Complexity widget */
+.rating-widget { display: flex; gap: 2px; align-items: center; }
+.rating-dot {
+  width: 22px; height: 22px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700; cursor: default;
+  border: 1.5px solid #e0e0e0; color: #bbb; background: #fafafa;
+  transition: background .15s, border-color .15s, color .15s;
+  user-select: none; flex-shrink: 0;
+}
+.rating-dot.filled-rating     { background: #e8f5e9; border-color: #66bb6a; color: #2e7d32; }
+.rating-dot.filled-complexity { background: #fff3e0; border-color: #ffa726; color: #e65100; }
+.rating-dot.clickable { cursor: pointer; }
+.rating-dot.clickable:hover   { border-color: #1a73e8; color: #1a73e8; background: #e8f0fe; }
+
 /* Problem summary truncation */
 .summary-text {
   display: -webkit-box;
@@ -2655,6 +2751,8 @@ mark.hl { background: #ffe566; color: inherit; border-radius: 2px; padding: 0 1p
         <th data-col="subcategory">Подкатегория</th>
         <th data-col="problem_summary">Причина обращения</th>
         <th data-col="result">Результат</th>
+        <th data-col="rating" style="text-align:center">Оценка</th>
+        <th data-col="complexity" style="text-align:center">Сложность</th>
         <th data-col="comment">Комм. поддержки</th>
         <th data-col="comment_manager">Комм. менеджера</th>
         <th data-col="responsible_dept" class="col-dept">Отв. отдел</th>
