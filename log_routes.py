@@ -682,6 +682,7 @@ tbody tr:hover td.col-dept { background: #eef2ff; }
 .editable.saved  { animation: flash 1s ease forwards; }
 .comment-wrap { display: flex; flex-direction: column; gap: 1px; }
 .comment-author { font-weight: 600; font-size: 11px; color: #888; line-height: 1.2; }
+mark.hl { background: #ffe566; color: inherit; border-radius: 2px; padding: 0 1px; font-style: normal; }
 .select-cell {
   cursor: pointer; padding: 3px 5px; border-radius: 4px;
   min-width: 60px; min-height: 20px;
@@ -1057,12 +1058,46 @@ async function load(resetPage = true) {
     }
 
     render(data.rows);
+    highlightSearch(document.getElementById('filter_search').value);
     renderPagination(data.page, data.pages, data.total);
     document.getElementById('count').textContent =
       `${data.total} записей, стр. ${data.page} из ${data.pages}`;
   } catch (e) {
     tbody.innerHTML = `<tr><td colspan="16" class="no-data">Ошибка загрузки: ${e.message}</td></tr>`;
   }
+}
+
+function highlightSearch(term) {
+  if (!term || term.length < 3) return;
+  const tbody = document.getElementById('tbody');
+  const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const regex = new RegExp(escaped, 'gi');
+
+  function walkNode(node) {
+    if (node.nodeType === 3) { // текстовый узел
+      const text = node.textContent;
+      if (!regex.test(text)) { regex.lastIndex = 0; return; }
+      regex.lastIndex = 0;
+      const frag = document.createDocumentFragment();
+      let last = 0, m;
+      while ((m = regex.exec(text)) !== null) {
+        if (m.index > last) frag.appendChild(document.createTextNode(text.slice(last, m.index)));
+        const mark = document.createElement('mark');
+        mark.className = 'hl';
+        mark.textContent = m[0];
+        frag.appendChild(mark);
+        last = m.index + m[0].length;
+      }
+      if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+      node.parentNode.replaceChild(frag, node);
+    } else if (node.nodeType === 1) {
+      // Пропускаем contenteditable — чтобы не ломать blur/save
+      if (node.contentEditable === 'true' || node.tagName === 'SELECT' || node.tagName === 'INPUT') return;
+      Array.from(node.childNodes).forEach(walkNode);
+    }
+  }
+
+  tbody.querySelectorAll('td').forEach(td => walkNode(td));
 }
 
 function renderPagination(page, pages, total) {
@@ -1906,6 +1941,7 @@ tbody td:last-child { border-right: none; }
 .editable.saved  { animation: flash 1s ease forwards; }
 .comment-wrap { display: flex; flex-direction: column; gap: 1px; }
 .comment-author { font-weight: 600; font-size: 11px; color: #888; line-height: 1.2; }
+mark.hl { background: #ffe566; color: inherit; border-radius: 2px; padding: 0 1px; font-style: normal; }
 
 .select-cell {
   cursor: pointer; padding: 3px 5px; border-radius: 4px;
@@ -2204,12 +2240,45 @@ async function load(resetPage = true) {
     }
 
     render(data.rows);
+    highlightSearch(document.getElementById('filter_search').value);
     renderPagination(data.page, data.pages, data.total);
     document.getElementById('count').textContent =
       `${data.total} записей, стр. ${data.page} из ${data.pages}`;
   } catch (e) {
     tbody.innerHTML = `<tr><td colspan="15" class="no-data">Ошибка загрузки: ${e.message}</td></tr>`;
   }
+}
+
+function highlightSearch(term) {
+  if (!term || term.length < 3) return;
+  const tbody = document.getElementById('tbody');
+  const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const regex = new RegExp(escaped, 'gi');
+
+  function walkNode(node) {
+    if (node.nodeType === 3) {
+      const text = node.textContent;
+      if (!regex.test(text)) { regex.lastIndex = 0; return; }
+      regex.lastIndex = 0;
+      const frag = document.createDocumentFragment();
+      let last = 0, m;
+      while ((m = regex.exec(text)) !== null) {
+        if (m.index > last) frag.appendChild(document.createTextNode(text.slice(last, m.index)));
+        const mark = document.createElement('mark');
+        mark.className = 'hl';
+        mark.textContent = m[0];
+        frag.appendChild(mark);
+        last = m.index + m[0].length;
+      }
+      if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+      node.parentNode.replaceChild(frag, node);
+    } else if (node.nodeType === 1) {
+      if (node.contentEditable === 'true' || node.tagName === 'SELECT' || node.tagName === 'INPUT') return;
+      Array.from(node.childNodes).forEach(walkNode);
+    }
+  }
+
+  tbody.querySelectorAll('td').forEach(td => walkNode(td));
 }
 
 function renderPagination(page, pages, total) {
