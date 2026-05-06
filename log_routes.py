@@ -208,6 +208,7 @@ def api_log(
     dept:        str = Query(default=""),
     author:      str = Query(default=""),
     login:       str = Query(default=""),
+    search:      str = Query(default=""),
     page:        int = Query(default=1, ge=1),
 ):
     df = date_from or str(date.today() - timedelta(days=7))
@@ -241,6 +242,23 @@ def api_log(
         where += f" AND ifNull(d.visitor_name, '') ILIKE '%{q(author)}%'"
     if login and len(login) >= 3:
         where += f" AND ifNull(d.visitor_name, '') ILIKE '%{q(login)}%'"
+    if search and len(search) >= 3:
+        sq = q(search)
+        where += (
+            f" AND ("
+            f"ifNull(d.visitor_name,'') ILIKE '%{sq}%'"
+            f" OR ifNull(d.operator_name,'') ILIKE '%{sq}%'"
+            f" OR ifNull(a.contact_reason,'') ILIKE '%{sq}%'"
+            f" OR if(e.category!='',e.category,ifNull(a.category,'')) ILIKE '%{sq}%'"
+            f" OR if(e.subcategory!='',e.subcategory,ifNull(a.subcategory,'')) ILIKE '%{sq}%'"
+            f" OR ifNull(a.user_problem_summary,'') ILIKE '%{sq}%'"
+            f" OR if(e.result!='' AND e.result IS NOT NULL,e.result,ifNull(a.resolution_status,'')) ILIKE '%{sq}%'"
+            f" OR ifNull(e.comment,'') ILIKE '%{sq}%'"
+            f" OR ifNull(e.comment_manager,'') ILIKE '%{sq}%'"
+            f" OR ifNull(t.responsible_dept,'') ILIKE '%{sq}%'"
+            f" OR ifNull(d.page_url,'') ILIKE '%{sq}%'"
+            f")"
+        )
 
     offset = (page - 1) * PER_PAGE
 
@@ -844,6 +862,10 @@ tr.dialog-row td { padding: 0 !important; background: #f8f9fa; border-bottom: 2p
   <button class="btn btn-green" id="btn_add" onclick="addManualRow()" title="Добавить строку вручную">+ Строка</button>
   <span class="count" id="count"></span>
   <div style="margin-left:auto;display:flex;align-items:center;gap:10px;flex-shrink:0">
+    <div class="filter-group" style="margin:0">
+      <label>🔍 Поиск</label>
+      <input type="text" id="filter_search" placeholder="от 3 символов" style="width:160px">
+    </div>
     <span style="font-size:12px;color:#555">%%USER%%</span>
     <a href="/auth/logout" style="font-size:12px;color:#1a73e8;text-decoration:none;white-space:nowrap">Выйти</a>
   </div>
@@ -924,6 +946,7 @@ function saveFilters() {
       channel:     document.getElementById('filter_channel').value,
       author:      document.getElementById('filter_author').value,
       login:       document.getElementById('filter_login').value,
+      search:      document.getElementById('filter_search').value,
     }));
   } catch(_) {}
 }
@@ -940,6 +963,7 @@ function restoreFilters() {
     set('filter_dept',        f.dept);
     set('filter_author',      f.author);
     set('filter_login',       f.login);
+    set('filter_search',      f.search);
     if (f.category) {
       set('filter_category', f.category);
       updateSubcatFilter();
@@ -957,9 +981,9 @@ function initFilters() {
     Object.keys(CAT_MAP).map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
   restoreFilters();
 
-  // Автопоиск по Автору и Логину от 3 символов с debounce 400ms
+  // Автопоиск по Автору, Логину и Поиску от 3 символов с debounce 400ms
   let _searchTimer = null;
-  ['filter_author', 'filter_login'].forEach(id => {
+  ['filter_author', 'filter_login', 'filter_search'].forEach(id => {
     document.getElementById(id).addEventListener('input', function() {
       clearTimeout(_searchTimer);
       const val = this.value;
@@ -999,6 +1023,7 @@ async function load(resetPage = true) {
     dept:        document.getElementById('filter_dept').value,
     author:      document.getElementById('filter_author').value,
     login:       document.getElementById('filter_login').value,
+    search:      document.getElementById('filter_search').value,
     page:        currentPage,
   });
 
@@ -1572,6 +1597,7 @@ def api_day_tracker(
     dept:        str = Query(default=""),
     author:      str = Query(default=""),
     login:       str = Query(default=""),
+    search:      str = Query(default=""),
     page:        int = Query(default=1, ge=1),
 ):
     df = date_from or str(date.today() - timedelta(days=7))
@@ -1602,6 +1628,23 @@ def api_day_tracker(
         where += f" AND ifNull(d.visitor_name, '') ILIKE '%{q(author)}%'"
     if login and len(login) >= 3:
         where += f" AND ifNull(d.visitor_name, '') ILIKE '%{q(login)}%'"
+    if search and len(search) >= 3:
+        sq = q(search)
+        where += (
+            f" AND ("
+            f"ifNull(d.visitor_name,'') ILIKE '%{sq}%'"
+            f" OR ifNull(d.operator_name,'') ILIKE '%{sq}%'"
+            f" OR ifNull(a.contact_reason,'') ILIKE '%{sq}%'"
+            f" OR if(e.category!='',e.category,ifNull(a.category,'')) ILIKE '%{sq}%'"
+            f" OR if(e.subcategory!='',e.subcategory,ifNull(a.subcategory,'')) ILIKE '%{sq}%'"
+            f" OR ifNull(a.user_problem_summary,'') ILIKE '%{sq}%'"
+            f" OR if(e.result!='' AND e.result IS NOT NULL,e.result,ifNull(a.resolution_status,'')) ILIKE '%{sq}%'"
+            f" OR ifNull(e.comment,'') ILIKE '%{sq}%'"
+            f" OR ifNull(e.comment_manager,'') ILIKE '%{sq}%'"
+            f" OR ifNull(t.responsible_dept,'') ILIKE '%{sq}%'"
+            f" OR ifNull(d.page_url,'') ILIKE '%{sq}%'"
+            f")"
+        )
 
     offset = (page - 1) * PER_PAGE
 
@@ -2003,6 +2046,10 @@ tbody td:last-child { border-right: none; }
   <button class="btn" onclick="load()">Применить</button>
   <span class="count" id="count"></span>
   <div style="margin-left:auto;display:flex;align-items:center;gap:10px;flex-shrink:0">
+    <div class="filter-group" style="margin:0">
+      <label>🔍 Поиск</label>
+      <input type="text" id="filter_search" placeholder="от 3 символов" style="width:160px">
+    </div>
     <span style="font-size:12px;color:#555">%%USER%%</span>
     <a href="/auth/logout" style="font-size:12px;color:#1a73e8;text-decoration:none;white-space:nowrap">Выйти</a>
   </div>
@@ -2130,6 +2177,7 @@ async function load(resetPage = true) {
     dept:        document.getElementById('filter_dept').value,
     author:      document.getElementById('filter_author').value,
     login:       document.getElementById('filter_login').value,
+    search:      document.getElementById('filter_search').value,
     page:        currentPage,
   });
 
@@ -2410,9 +2458,9 @@ function restoreColWidths() {
 initFilters();
 initResizableColumns();
 
-// Автопоиск по Автору и Логину от 3 символов с debounce 400ms
+// Автопоиск по Автору, Логину и Поиску от 3 символов с debounce 400ms
 let _searchTimer = null;
-['filter_author', 'filter_login'].forEach(id => {
+['filter_author', 'filter_login', 'filter_search'].forEach(id => {
   document.getElementById(id).addEventListener('input', function() {
     clearTimeout(_searchTimer);
     const val = this.value;
