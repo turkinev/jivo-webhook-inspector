@@ -467,14 +467,16 @@ def api_dialog(chat_id: int):
 def api_create_manual():
     """Создаёт новую пустую строку вручную."""
     ensure_manual_table()
-    import time as _time
-    new_id = int(_time.time() * 1000)
-    today  = str(date.today())
+    from datetime import datetime as _dt
+    now    = _dt.now()
+    new_id = int(now.timestamp() * 1000)
+    today  = str(now.date())
+    now_time = now.strftime("%H:%M")
     ch_execute(
-        "INSERT INTO manual_log_entries (id, date, channel) FORMAT JSONEachRow",
-        data=json.dumps({"id": new_id, "date": today, "channel": ""}).encode("utf-8"),
+        "INSERT INTO manual_log_entries (id, date, time, channel) FORMAT JSONEachRow",
+        data=json.dumps({"id": new_id, "date": today, "time": now_time, "channel": ""}).encode("utf-8"),
     )
-    return JSONResponse({"ok": True, "id": new_id, "date": today})
+    return JSONResponse({"ok": True, "id": new_id, "date": today, "time": now_time})
 
 
 class ManualEditPayload(BaseModel):
@@ -1829,7 +1831,7 @@ async function addManualRow() {
     const resp = await fetch('/api/log/manual', { method: 'POST' });
     const data = await resp.json();
     if (!data.ok) throw new Error('Ошибка создания');
-    prependManualRow(data.id, data.date);
+    prependManualRow(data.id, data.date, data.time);
   } catch(e) {
     alert('Ошибка: ' + e.message);
   } finally {
@@ -1837,15 +1839,16 @@ async function addManualRow() {
   }
 }
 
-function prependManualRow(id, dateStr) {
-  const rowKey = 'm_' + id;
-  const today  = dateStr || fmt(new Date());
+function prependManualRow(id, dateStr, timeStr) {
+  const rowKey  = 'm_' + id;
+  const today   = dateStr || fmt(new Date());
+  const nowTime = timeStr || '';
   const tr = document.createElement('tr');
   tr.dataset.id     = rowKey;
   tr.dataset.manual = '1';
   tr.innerHTML = `
     <td class="col-date"><button class="del-btn" onclick="deleteManualRow(this,'${rowKey}')" title="Удалить строку">×</button><div class="editable" contenteditable="true" data-field="date" data-orig="${esc(today)}" data-placeholder="ГГГГ-ММ-ДД">${esc(today)}</div></td>
-    <td class="col-time"><div class="editable" contenteditable="true" data-field="time" data-orig="" data-placeholder="ЧЧ:ММ"></div></td>
+    <td class="col-time"><div class="editable" contenteditable="true" data-field="time" data-orig="${esc(nowTime)}" data-placeholder="ЧЧ:ММ">${esc(nowTime)}</div></td>
     <td><div class="editable" contenteditable="true" data-field="operator" data-orig="" data-placeholder="Оператор"></div></td>
     <td><div class="select-cell" data-field="source_type" data-value="" onclick="openSelect(this)"><span style="color:#bbb">—</span></div></td>
     <td class="col-author"><div class="editable" contenteditable="true" data-field="author" data-orig="" data-placeholder="Автор"></div></td>
