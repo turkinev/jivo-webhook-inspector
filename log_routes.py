@@ -1769,11 +1769,10 @@ function renderCellInner(field, val) {
 
 // ── Открыть выпадающий список ──────────────────────────────────────────────
 let _activeCellDd = null;
+let _activeCellSrc = null;
 
 function _cellDdOutside(e) {
   if (!_activeCellDd) return;
-  // Не закрываем если клик внутри дропдауна или по другой select-cell
-  // (select-cell обработает сама через openSelect → closeCellDd)
   if (_activeCellDd.contains(e.target)) return;
   if (e.target.closest && e.target.closest('.select-cell')) return;
   closeCellDd();
@@ -1783,11 +1782,14 @@ function closeCellDd() {
   if (_activeCellDd) {
     _activeCellDd.remove();
     _activeCellDd = null;
+    _activeCellSrc = null;
     document.removeEventListener('click', _cellDdOutside);
   }
 }
 
 function openSelect(cell) {
+  // Повторный клик по той же ячейке — закрыть
+  if (_activeCellSrc === cell) { closeCellDd(); return; }
   closeCellDd();
 
   const field   = cell.dataset.field;
@@ -1845,6 +1847,7 @@ function openSelect(cell) {
 
   document.body.appendChild(dd);
   _activeCellDd = dd;
+  _activeCellSrc = cell;
 
   // Добавляем обработчик закрытия — после того как текущий click отработает
   setTimeout(() => {
