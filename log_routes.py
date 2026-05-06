@@ -781,7 +781,7 @@ def log_page(user: dict = Depends(require_user)):
             status_code=403,
         )
     admin_link = (
-        '<a href="/admin/perms" style="font-size:12px;color:#e67e22;text-decoration:none;white-space:nowrap">⚙ Права</a>'
+        '<a href="/admin/perms" class="topbar-admin">⚙ Права</a>'
         if perms.get("is_manager") else ""
     )
     return (
@@ -813,31 +813,79 @@ html, body {
   display: flex; flex-direction: column;
 }
 
-/* ── Toolbar ── */
-.toolbar {
-  flex-shrink: 0;
-  background: #fff; border-bottom: 1px solid #ddd;
-  padding: 8px 14px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-  box-shadow: 0 1px 4px rgba(0,0,0,.08);
+/* ── Topbar ── */
+.topbar {
+  flex-shrink: 0; background: #1a73e8;
+  padding: 0 16px; height: 48px;
+  display: flex; align-items: center; gap: 10px;
+  box-shadow: 0 2px 6px rgba(0,0,0,.18); z-index: 10;
 }
-.toolbar h1 { font-size: 15px; font-weight: 600; color: #333; margin-right: 6px; }
-.filter-group { display: flex; align-items: center; gap: 4px; }
-.filter-group label { font-size: 12px; color: #666; white-space: nowrap; }
-.toolbar input[type=date], .toolbar input[type=text], .toolbar select {
-  border: 1px solid #ccc; border-radius: 5px; padding: 4px 7px;
-  font-size: 12px; background: #fafafa; color: #333;
-  height: 28px; box-sizing: border-box;
+.topbar h1 {
+  font-size: 15px; font-weight: 600; color: #fff;
+  white-space: nowrap; letter-spacing: .2px;
 }
-.toolbar input[type=date]:focus, .toolbar select:focus {
-  outline: none; border-color: #1a73e8; background: #fff;
+.topbar-right { margin-left: auto; display: flex; align-items: center; gap: 4px; }
+.topbar-search { position: relative; display: flex; align-items: center; }
+.topbar-search input {
+  border: none; border-radius: 20px;
+  padding: 5px 12px 5px 30px;
+  font-size: 12px; background: rgba(255,255,255,.18); color: #fff;
+  width: 200px; outline: none; transition: background .2s, width .2s;
 }
+.topbar-search input::placeholder { color: rgba(255,255,255,.6); }
+.topbar-search input:focus { background: rgba(255,255,255,.28); width: 240px; }
+.topbar-search-icon {
+  position: absolute; left: 9px; font-size: 12px;
+  color: rgba(255,255,255,.7); pointer-events: none;
+}
+.user-chip {
+  display: flex; align-items: center; gap: 6px;
+  background: rgba(255,255,255,.18); border-radius: 20px;
+  padding: 3px 10px 3px 4px; font-size: 12px; color: #fff; white-space: nowrap;
+}
+.user-avatar {
+  width: 26px; height: 26px; border-radius: 50%;
+  background: rgba(255,255,255,.35);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700; color: #fff;
+}
+.topbar-link {
+  font-size: 12px; color: rgba(255,255,255,.85); text-decoration: none;
+  white-space: nowrap; padding: 5px 10px; border-radius: 5px; transition: background .15s;
+}
+.topbar-link:hover { background: rgba(255,255,255,.18); color: #fff; }
+.topbar-admin {
+  font-size: 12px; color: #ffd54f; text-decoration: none; font-weight: 500;
+  white-space: nowrap; padding: 5px 10px; border-radius: 5px; transition: background .15s;
+}
+.topbar-admin:hover { background: rgba(255,255,255,.15); }
+/* ── Filterbar ── */
+.filterbar {
+  flex-shrink: 0; background: #f8f9fa; border-bottom: 1px solid #e0e0e0;
+  padding: 7px 16px; display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+}
+.fg { display: flex; align-items: center; gap: 4px; }
+.fg label {
+  font-size: 10.5px; color: #888; white-space: nowrap;
+  font-weight: 600; text-transform: uppercase; letter-spacing: .4px;
+}
+.filterbar input[type=date], .filterbar input[type=text], .filterbar select {
+  border: 1px solid #d5d5d5; border-radius: 6px; padding: 4px 8px;
+  font-size: 12px; background: #fff; color: #333;
+  height: 30px; box-sizing: border-box; transition: border-color .15s, box-shadow .15s;
+}
+.filterbar input[type=date]:focus, .filterbar input[type=text]:focus, .filterbar select:focus {
+  outline: none; border-color: #1a73e8; box-shadow: 0 0 0 2px rgba(26,115,232,.12);
+}
+.filter-sep { width: 1px; height: 22px; background: #d8d8d8; margin: 0 2px; }
+.filterbar-actions { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.count { font-size: 12px; color: #888; white-space: nowrap; }
 .btn {
-  background: #1a73e8; color: #fff; border: none; border-radius: 5px;
-  padding: 0 14px; height: 28px; cursor: pointer; font-size: 13px; font-weight: 500;
-  white-space: nowrap;
+  background: #1a73e8; color: #fff; border: none; border-radius: 6px;
+  padding: 0 14px; height: 30px; cursor: pointer; font-size: 12px; font-weight: 500;
+  white-space: nowrap; transition: background .15s;
 }
 .btn:hover { background: #1557b0; }
-.count { margin-left: auto; font-size: 12px; color: #888; white-space: nowrap; }
 
 /* ── Table wrapper ── */
 .wrap {
@@ -1053,35 +1101,46 @@ tr.dialog-row td { padding: 0 !important; background: #f8f9fa; border-bottom: 2p
 </head>
 <body>
 
-<div class="toolbar">
+<div class="topbar">
   <h1>📋 Журнал обращений</h1>
-
-  <div class="filter-group">
+  <div class="topbar-right">
+    <div class="topbar-search">
+      <span class="topbar-search-icon">🔍</span>
+      <input type="text" id="filter_search" placeholder="Поиск по всем полям...">
+    </div>
+    %%ADMIN_LINK%%
+    <div class="user-chip">
+      <div class="user-avatar" id="user-avatar"></div>
+      <span>%%USER%%</span>
+    </div>
+    <a href="/auth/logout" class="topbar-link">Выйти</a>
+  </div>
+</div>
+<div class="filterbar">
+  <div class="fg">
     <label>С</label>
     <input type="date" id="date_from">
   </div>
-  <div class="filter-group">
+  <div class="fg">
     <label>По</label>
     <input type="date" id="date_to">
   </div>
-  <div class="filter-group">
+  <div class="filter-sep"></div>
+  <div class="fg">
     <label>Оператор</label>
     <select id="filter_operator"><option value="">Все</option></select>
   </div>
-  <div class="filter-group">
+  <div class="fg">
     <label>Автор</label>
-    <input type="text" id="filter_author" placeholder="от 3 символов" style="width:120px">
+    <input type="text" id="filter_author" placeholder="введите имя" style="width:130px">
   </div>
-  <div class="filter-group">
+  <div class="fg">
     <label>Логин</label>
-    <input type="text" id="filter_login" placeholder="от 3 символов" style="width:120px">
+    <input type="text" id="filter_login" placeholder="введите логин" style="width:130px">
   </div>
-  <div class="filter-group">
-    <label>Канал</label>
-    <select id="filter_channel"><option value="">Все</option></select>
-  </div>
-  <div class="filter-group">
-    <label>Тип автора</label>
+  <div class="filter-sep"></div>
+  <div class="fg">
+    <label>Тип</label>
     <select id="filter_stype">
       <option value="">Все</option>
       <option value="Клиент">Клиент</option>
@@ -1089,17 +1148,23 @@ tr.dialog-row td { padding: 0 !important; background: #f8f9fa; border-bottom: 2p
       <option value="Сотрудник">Сотрудник</option>
     </select>
   </div>
-  <div class="filter-group">
+  <div class="fg">
+    <label>Канал</label>
+    <select id="filter_channel"><option value="">Все</option></select>
+  </div>
+  <div class="filter-sep"></div>
+  <div class="fg">
     <label>Категория</label>
     <select id="filter_category" onchange="updateSubcatFilter()">
       <option value="">Все</option>
     </select>
   </div>
-  <div class="filter-group">
+  <div class="fg">
     <label>Подкатегория</label>
     <select id="filter_subcategory"><option value="">Все</option></select>
   </div>
-  <div class="filter-group">
+  <div class="filter-sep"></div>
+  <div class="fg">
     <label>Результат</label>
     <select id="filter_result">
       <option value="">Все</option>
@@ -1109,7 +1174,7 @@ tr.dialog-row td { padding: 0 !important; background: #f8f9fa; border-bottom: 2p
       <option value="Эскалация">Эскалация</option>
     </select>
   </div>
-  <div class="filter-group">
+  <div class="fg">
     <label>Отдел</label>
     <select id="filter_dept">
       <option value="">Все</option>
@@ -1122,17 +1187,10 @@ tr.dialog-row td { padding: 0 !important; background: #f8f9fa; border-bottom: 2p
       <option value="Юрист">Юрист</option>
     </select>
   </div>
-  <button class="btn" onclick="load()">Применить</button>
-  <button class="btn btn-green" id="btn_add" onclick="addManualRow()" title="Добавить строку вручную">+ Строка</button>
-  <span class="count" id="count"></span>
-  <div style="margin-left:auto;display:flex;align-items:center;gap:10px;flex-shrink:0">
-    <div class="filter-group" style="margin:0">
-      <label>🔍 Поиск</label>
-      <input type="text" id="filter_search" placeholder="от 3 символов" style="width:160px">
-    </div>
-    <span style="font-size:12px;color:#555">%%USER%%</span>
-    %%ADMIN_LINK%%
-    <a href="/auth/logout" style="font-size:12px;color:#1a73e8;text-decoration:none;white-space:nowrap">Выйти</a>
+  <div class="filterbar-actions">
+    <button class="btn" onclick="load()">Применить</button>
+    <button class="btn btn-green" id="btn_add" onclick="addManualRow()">+ Строка</button>
+    <span class="count" id="count"></span>
   </div>
 </div>
 
@@ -1603,6 +1661,12 @@ async function saveRow(row, feedbackEl) {
 // ── Права доступа (подставляются сервером) ─────────────────────────────────
 const PERMS        = %%PERMS%%;
 const CURRENT_USER = "%%USER%%";
+
+// Аватар — первая буква имени
+(function() {
+  const av = document.getElementById('user-avatar');
+  if (av && CURRENT_USER) av.textContent = CURRENT_USER[0].toUpperCase();
+})();
 
 // ── Карта категорий / подкатегорий ─────────────────────────────────────────
 const SOURCE_TYPES = ['Клиент', 'ПВЗ', 'Сотрудник', 'Жалоба', 'Заявка'];
@@ -2094,7 +2158,7 @@ def api_day_tracker_edit(chat_id: int, payload: DayTrackerEdit):
 def day_tracker_page(user: dict = Depends(require_user)):
     perms = get_permissions(user) or {"editable": [], "hidden": [], "role": "support", "is_manager": False}
     admin_link = (
-        '<a href="/admin/perms" style="font-size:12px;color:#e67e22;text-decoration:none;white-space:nowrap">⚙ Права</a>'
+        '<a href="/admin/perms" class="topbar-admin">⚙ Права</a>'
         if perms.get("is_manager") else ""
     )
     return (
@@ -2120,31 +2184,79 @@ html, body {
   display: flex; flex-direction: column;
 }
 
-/* ── Toolbar ── */
-.toolbar {
-  flex-shrink: 0;
-  background: #fff; border-bottom: 1px solid #ddd;
-  padding: 8px 14px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-  box-shadow: 0 1px 4px rgba(0,0,0,.08);
+/* ── Topbar ── */
+.topbar {
+  flex-shrink: 0; background: #1a73e8;
+  padding: 0 16px; height: 48px;
+  display: flex; align-items: center; gap: 10px;
+  box-shadow: 0 2px 6px rgba(0,0,0,.18); z-index: 10;
 }
-.toolbar h1 { font-size: 15px; font-weight: 600; color: #333; margin-right: 6px; }
-.filter-group { display: flex; align-items: center; gap: 4px; }
-.filter-group label { font-size: 12px; color: #666; white-space: nowrap; }
-.toolbar input[type=date], .toolbar input[type=text], .toolbar select {
-  border: 1px solid #ccc; border-radius: 5px; padding: 4px 7px;
-  font-size: 12px; background: #fafafa; color: #333;
-  height: 28px; box-sizing: border-box;
+.topbar h1 {
+  font-size: 15px; font-weight: 600; color: #fff;
+  white-space: nowrap; letter-spacing: .2px;
 }
-.toolbar input[type=date]:focus, .toolbar select:focus {
-  outline: none; border-color: #1a73e8; background: #fff;
+.topbar-right { margin-left: auto; display: flex; align-items: center; gap: 4px; }
+.topbar-search { position: relative; display: flex; align-items: center; }
+.topbar-search input {
+  border: none; border-radius: 20px;
+  padding: 5px 12px 5px 30px;
+  font-size: 12px; background: rgba(255,255,255,.18); color: #fff;
+  width: 200px; outline: none; transition: background .2s, width .2s;
 }
+.topbar-search input::placeholder { color: rgba(255,255,255,.6); }
+.topbar-search input:focus { background: rgba(255,255,255,.28); width: 240px; }
+.topbar-search-icon {
+  position: absolute; left: 9px; font-size: 12px;
+  color: rgba(255,255,255,.7); pointer-events: none;
+}
+.user-chip {
+  display: flex; align-items: center; gap: 6px;
+  background: rgba(255,255,255,.18); border-radius: 20px;
+  padding: 3px 10px 3px 4px; font-size: 12px; color: #fff; white-space: nowrap;
+}
+.user-avatar {
+  width: 26px; height: 26px; border-radius: 50%;
+  background: rgba(255,255,255,.35);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700; color: #fff;
+}
+.topbar-link {
+  font-size: 12px; color: rgba(255,255,255,.85); text-decoration: none;
+  white-space: nowrap; padding: 5px 10px; border-radius: 5px; transition: background .15s;
+}
+.topbar-link:hover { background: rgba(255,255,255,.18); color: #fff; }
+.topbar-admin {
+  font-size: 12px; color: #ffd54f; text-decoration: none; font-weight: 500;
+  white-space: nowrap; padding: 5px 10px; border-radius: 5px; transition: background .15s;
+}
+.topbar-admin:hover { background: rgba(255,255,255,.15); }
+/* ── Filterbar ── */
+.filterbar {
+  flex-shrink: 0; background: #f8f9fa; border-bottom: 1px solid #e0e0e0;
+  padding: 7px 16px; display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+}
+.fg { display: flex; align-items: center; gap: 4px; }
+.fg label {
+  font-size: 10.5px; color: #888; white-space: nowrap;
+  font-weight: 600; text-transform: uppercase; letter-spacing: .4px;
+}
+.filterbar input[type=date], .filterbar input[type=text], .filterbar select {
+  border: 1px solid #d5d5d5; border-radius: 6px; padding: 4px 8px;
+  font-size: 12px; background: #fff; color: #333;
+  height: 30px; box-sizing: border-box; transition: border-color .15s, box-shadow .15s;
+}
+.filterbar input[type=date]:focus, .filterbar input[type=text]:focus, .filterbar select:focus {
+  outline: none; border-color: #1a73e8; box-shadow: 0 0 0 2px rgba(26,115,232,.12);
+}
+.filter-sep { width: 1px; height: 22px; background: #d8d8d8; margin: 0 2px; }
+.filterbar-actions { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.count { font-size: 12px; color: #888; white-space: nowrap; }
 .btn {
-  background: #1a73e8; color: #fff; border: none; border-radius: 5px;
-  padding: 0 14px; height: 28px; cursor: pointer; font-size: 13px; font-weight: 500;
-  white-space: nowrap;
+  background: #1a73e8; color: #fff; border: none; border-radius: 6px;
+  padding: 0 14px; height: 30px; cursor: pointer; font-size: 12px; font-weight: 500;
+  white-space: nowrap; transition: background .15s;
 }
 .btn:hover { background: #1557b0; }
-.count { margin-left: auto; font-size: 12px; color: #888; white-space: nowrap; }
 
 /* ── Table wrapper ── */
 .wrap {
@@ -2310,35 +2422,46 @@ mark.hl { background: #ffe566; color: inherit; border-radius: 2px; padding: 0 1p
 </head>
 <body>
 
-<div class="toolbar">
+<div class="topbar">
   <h1>📊 Day Tracker</h1>
-
-  <div class="filter-group">
+  <div class="topbar-right">
+    <div class="topbar-search">
+      <span class="topbar-search-icon">🔍</span>
+      <input type="text" id="filter_search" placeholder="Поиск по всем полям...">
+    </div>
+    %%ADMIN_LINK%%
+    <div class="user-chip">
+      <div class="user-avatar" id="user-avatar"></div>
+      <span>%%USER%%</span>
+    </div>
+    <a href="/auth/logout" class="topbar-link">Выйти</a>
+  </div>
+</div>
+<div class="filterbar">
+  <div class="fg">
     <label>С</label>
     <input type="date" id="date_from">
   </div>
-  <div class="filter-group">
+  <div class="fg">
     <label>По</label>
     <input type="date" id="date_to">
   </div>
-  <div class="filter-group">
+  <div class="filter-sep"></div>
+  <div class="fg">
     <label>Оператор</label>
     <select id="filter_operator"><option value="">Все</option></select>
   </div>
-  <div class="filter-group">
+  <div class="fg">
     <label>Автор</label>
-    <input type="text" id="filter_author" placeholder="от 3 символов" style="width:120px">
+    <input type="text" id="filter_author" placeholder="введите имя" style="width:130px">
   </div>
-  <div class="filter-group">
+  <div class="fg">
     <label>Логин</label>
-    <input type="text" id="filter_login" placeholder="от 3 символов" style="width:120px">
+    <input type="text" id="filter_login" placeholder="введите логин" style="width:130px">
   </div>
-  <div class="filter-group">
-    <label>Канал</label>
-    <select id="filter_channel"><option value="">Все</option></select>
-  </div>
-  <div class="filter-group">
-    <label>Тип автора</label>
+  <div class="filter-sep"></div>
+  <div class="fg">
+    <label>Тип</label>
     <select id="filter_stype">
       <option value="">Все</option>
       <option value="Клиент">Клиент</option>
@@ -2346,17 +2469,23 @@ mark.hl { background: #ffe566; color: inherit; border-radius: 2px; padding: 0 1p
       <option value="Сотрудник">Сотрудник</option>
     </select>
   </div>
-  <div class="filter-group">
+  <div class="fg">
+    <label>Канал</label>
+    <select id="filter_channel"><option value="">Все</option></select>
+  </div>
+  <div class="filter-sep"></div>
+  <div class="fg">
     <label>Категория</label>
     <select id="filter_category" onchange="updateSubcatFilter()">
       <option value="">Все</option>
     </select>
   </div>
-  <div class="filter-group">
+  <div class="fg">
     <label>Подкатегория</label>
     <select id="filter_subcategory"><option value="">Все</option></select>
   </div>
-  <div class="filter-group">
+  <div class="filter-sep"></div>
+  <div class="fg">
     <label>Результат</label>
     <select id="filter_result">
       <option value="">Все</option>
@@ -2366,22 +2495,15 @@ mark.hl { background: #ffe566; color: inherit; border-radius: 2px; padding: 0 1p
       <option value="Эскалация">Эскалация</option>
     </select>
   </div>
-  <div class="filter-group">
+  <div class="fg">
     <label>Отдел</label>
     <select id="filter_dept">
       <option value="">Все</option>
     </select>
   </div>
-  <button class="btn" onclick="load()">Применить</button>
-  <span class="count" id="count"></span>
-  <div style="margin-left:auto;display:flex;align-items:center;gap:10px;flex-shrink:0">
-    <div class="filter-group" style="margin:0">
-      <label>🔍 Поиск</label>
-      <input type="text" id="filter_search" placeholder="от 3 символов" style="width:160px">
-    </div>
-    %%ADMIN_LINK%%
-    <span style="font-size:12px;color:#555">%%USER%%</span>
-    <a href="/auth/logout" style="font-size:12px;color:#1a73e8;text-decoration:none;white-space:nowrap">Выйти</a>
+  <div class="filterbar-actions">
+    <button class="btn" onclick="load()">Применить</button>
+    <span class="count" id="count"></span>
   </div>
 </div>
 
@@ -2417,6 +2539,13 @@ mark.hl { background: #ffe566; color: inherit; border-radius: 2px; padding: 0 1p
 <script>
 const CURRENT_USER = "%%USER%%";
 const PERMS        = %%PERMS%%;
+
+// Аватар — первая буква имени
+(function() {
+  const av = document.getElementById('user-avatar');
+  if (av && CURRENT_USER) av.textContent = CURRENT_USER[0].toUpperCase();
+})();
+
 const today = new Date();
 const week  = new Date(today); week.setDate(today.getDate() - 7);
 document.getElementById('date_from').value = fmt(week);
