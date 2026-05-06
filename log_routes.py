@@ -869,17 +869,28 @@ html, body {
   font-size: 10.5px; color: #888; white-space: nowrap;
   font-weight: 600; text-transform: uppercase; letter-spacing: .4px;
 }
-.filterbar input[type=date], .filterbar input[type=text], .filterbar select {
+.filterbar input[type=date], .filterbar input[type=text] {
   border: 1px solid #d5d5d5; border-radius: 6px; padding: 4px 8px;
   font-size: 12px; background: #fff; color: #333;
   height: 30px; box-sizing: border-box; transition: border-color .15s, box-shadow .15s;
 }
+.filterbar select {
+  border: 1px solid #d5d5d5; border-radius: 6px; padding: 4px 26px 4px 9px;
+  font-size: 12px; background: #fff; color: #333;
+  height: 30px; box-sizing: border-box; transition: border-color .15s, box-shadow .15s;
+  appearance: none; -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23999'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 8px center;
+  cursor: pointer;
+}
 .filterbar input[type=date]:focus, .filterbar input[type=text]:focus, .filterbar select:focus {
   outline: none; border-color: #1a73e8; box-shadow: 0 0 0 2px rgba(26,115,232,.12);
 }
+.filterbar select:hover { border-color: #b0b0b0; }
+.filterbar select option { padding: 6px; }
 .filter-sep { width: 1px; height: 22px; background: #d8d8d8; margin: 0 2px; }
-.filterbar-actions { display: flex; align-items: center; gap: 6px; margin-left: auto; }
-.filterbar-count { font-size: 12px; color: #888; white-space: nowrap; order: -1; margin-right: 4px; }
+.filterbar-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.filterbar-count { font-size: 12px; color: #999; white-space: nowrap; padding-left: 4px; border-left: 1px solid #e0e0e0; }
 .count { font-size: 12px; color: #888; white-space: nowrap; }
 .btn {
   background: #1a73e8; color: #fff; border: none; border-radius: 6px;
@@ -955,9 +966,6 @@ tbody td:last-child { border-right: none; }
 .ch-form { color: #e67e22; }
 
 /* Ответственный отдел */
-thead th.col-dept { background: #eef2ff; color: #3730a3; }
-tbody td.col-dept { background: #f8f9ff; }
-tbody tr:hover td.col-dept { background: #eef2ff; }
 .dept-badge {
   display: inline-block; padding: 2px 8px; border-radius: 10px;
   font-size: 11px; font-weight: 600; white-space: nowrap;
@@ -1188,8 +1196,8 @@ tr.dialog-row td { padding: 0 !important; background: #f8f9fa; border-bottom: 2p
   <div class="filterbar-actions">
     <button class="btn" onclick="load()">Применить</button>
     <button class="btn btn-green" id="btn_add" onclick="addManualRow()">+ Строка</button>
+    <span class="filterbar-count" id="count"></span>
   </div>
-  <span class="count filterbar-count" id="count"></span>
 </div>
 
 <div class="wrap">
@@ -2238,17 +2246,28 @@ html, body {
   font-size: 10.5px; color: #888; white-space: nowrap;
   font-weight: 600; text-transform: uppercase; letter-spacing: .4px;
 }
-.filterbar input[type=date], .filterbar input[type=text], .filterbar select {
+.filterbar input[type=date], .filterbar input[type=text] {
   border: 1px solid #d5d5d5; border-radius: 6px; padding: 4px 8px;
   font-size: 12px; background: #fff; color: #333;
   height: 30px; box-sizing: border-box; transition: border-color .15s, box-shadow .15s;
 }
+.filterbar select {
+  border: 1px solid #d5d5d5; border-radius: 6px; padding: 4px 26px 4px 9px;
+  font-size: 12px; background: #fff; color: #333;
+  height: 30px; box-sizing: border-box; transition: border-color .15s, box-shadow .15s;
+  appearance: none; -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23999'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 8px center;
+  cursor: pointer;
+}
 .filterbar input[type=date]:focus, .filterbar input[type=text]:focus, .filterbar select:focus {
   outline: none; border-color: #1a73e8; box-shadow: 0 0 0 2px rgba(26,115,232,.12);
 }
+.filterbar select:hover { border-color: #b0b0b0; }
+.filterbar select option { padding: 6px; }
 .filter-sep { width: 1px; height: 22px; background: #d8d8d8; margin: 0 2px; }
-.filterbar-actions { display: flex; align-items: center; gap: 6px; margin-left: auto; }
-.filterbar-count { font-size: 12px; color: #888; white-space: nowrap; order: -1; margin-right: 4px; }
+.filterbar-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.filterbar-count { font-size: 12px; color: #999; white-space: nowrap; padding-left: 4px; border-left: 1px solid #e0e0e0; }
 .count { font-size: 12px; color: #888; white-space: nowrap; }
 .btn {
   background: #1a73e8; color: #fff; border: none; border-radius: 6px;
@@ -2501,8 +2520,8 @@ mark.hl { background: #ffe566; color: inherit; border-radius: 2px; padding: 0 1p
   </div>
   <div class="filterbar-actions">
     <button class="btn" onclick="load()">Применить</button>
+    <span class="filterbar-count" id="count"></span>
   </div>
-  <span class="count filterbar-count" id="count"></span>
 </div>
 
 <div class="wrap">
