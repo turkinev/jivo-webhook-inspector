@@ -472,7 +472,7 @@ def api_create_manual():
     today  = str(date.today())
     ch_execute(
         "INSERT INTO manual_log_entries (id, date, channel) FORMAT JSONEachRow",
-        data=json.dumps({"id": new_id, "date": today, "channel": "Таблица"}).encode("utf-8"),
+        data=json.dumps({"id": new_id, "date": today, "channel": ""}).encode("utf-8"),
     )
     return JSONResponse({"ok": True, "id": new_id, "date": today})
 
@@ -505,7 +505,7 @@ def api_edit_manual(row_id: int, payload: ManualEditPayload):
         "id":            row_id,
         "date":          payload.date or today,
         "time":          payload.time or "",
-        "channel":       payload.channel or "Таблица",
+        "channel":       payload.channel or "",
         "operator":      payload.operator or "",
         "source_type":   payload.source_type or "",
         "author":        payload.author or "",
@@ -1856,7 +1856,9 @@ function prependManualRow(id, dateStr) {
     <td><div class="editable" contenteditable="true" data-field="problem_summary" data-orig="" data-placeholder="Суть обращения"></div></td>
     <td><div class="select-cell" data-field="result"  data-value="" onclick="openSelect(this)"><span style="color:#bbb">—</span></div></td>
     <td><div class="editable" contenteditable="true" data-field="comment" data-orig="" data-placeholder="Добавить..."></div></td>
-    <td class="col-channel"><div class="select-cell" data-field="channel" data-value="Таблица" onclick="openSelect(this)">Таблица</div></td>
+    <td><div class="editable" contenteditable="true" data-field="comment_manager" data-orig="" data-placeholder="Добавить..."></div></td>
+    <td><div class="select-cell select-dept" data-field="responsible_dept" data-value="" onclick="openSelect(this)"><span style="color:#bbb">—</span></div></td>
+    <td class="col-channel"><div class="select-cell" data-field="channel" data-value="" onclick="openSelect(this)"><span style="color:#bbb">—</span></div></td>
     <td></td>
   `;
   tr.querySelectorAll('.editable').forEach(el => el.addEventListener('blur', onBlur));
