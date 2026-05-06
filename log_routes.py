@@ -396,11 +396,15 @@ def api_log(
     for r in rows:
         r["is_manual"] = False
 
-    # Ручные строки — только на первой странице, поверх основных
+    # Ручные строки — подмешиваем на первой странице и сортируем вместе с основными
     manual_rows = []
     if page == 1:
         manual_rows = get_manual_rows(df, dt, operator, channel, stype, category, subcategory, result)
-    all_rows = manual_rows + rows
+    all_rows = sorted(
+        manual_rows + rows,
+        key=lambda r: (r.get("date", ""), r.get("time", "")),
+        reverse=True,
+    )
 
     operators = ch_query("""
         SELECT DISTINCT operator_name
