@@ -990,6 +990,9 @@ tbody td:last-child { border-right: none; }
 }
 .col-resize-handle:hover,
 .col-resize-handle.dragging { background: #1a73e8; }
+thead th { cursor: grab; }
+thead th.th-drag-over { border-left: 2px solid #1a73e8 !important; }
+thead th.th-dragging  { opacity: .45; }
 .col-summary { max-width: 320px; word-wrap: break-word; line-height: 1.4; }
 .col-login   { color: #888; font-size: 12px; }
 .col-week    { text-align: center; color: #888; font-size: 12px; }
@@ -2151,19 +2154,18 @@ const DEFAULT_COL_WIDTHS = [90, 55, 90, 90, 100, 110, 90, 120, 140, 340, 90, 70,
 function initResizableColumns() {
   const ths = [...document.querySelectorAll('thead th')];
   ths.forEach((th, i) => {
+    // ── Ресайз ──
     const handle = document.createElement('div');
     handle.className = 'col-resize-handle';
     th.appendChild(handle);
 
     let startX, startW;
-
     handle.addEventListener('mousedown', e => {
       startX = e.pageX;
       startW = th.offsetWidth;
       handle.classList.add('dragging');
       document.body.style.cursor = 'col-resize';
       document.body.style.userSelect = 'none';
-
       const onMove = e => {
         const w = Math.max(30, startW + e.pageX - startX);
         th.style.width = th.style.minWidth = th.style.maxWidth = w + 'px';
@@ -2179,6 +2181,42 @@ function initResizableColumns() {
       document.addEventListener('mousemove', onMove);
       document.addEventListener('mouseup', onUp);
       e.preventDefault();
+    });
+
+    // ── Drag-to-reorder ──
+    if (!th.dataset.col) return;
+    th.draggable = true;
+    th.addEventListener('dragstart', e => {
+      e.dataTransfer.setData('text/plain', th.dataset.col);
+      e.dataTransfer.effectAllowed = 'move';
+      setTimeout(() => th.classList.add('th-dragging'), 0);
+    });
+    th.addEventListener('dragend', () => {
+      th.classList.remove('th-dragging');
+      document.querySelectorAll('thead th').forEach(t => t.classList.remove('th-drag-over'));
+    });
+    th.addEventListener('dragover', e => {
+      if (!e.dataTransfer.types.includes('text/plain')) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      document.querySelectorAll('thead th').forEach(t => t.classList.remove('th-drag-over'));
+      if (th.dataset.col !== e.dataTransfer.getData('text/plain')) th.classList.add('th-drag-over');
+    });
+    th.addEventListener('dragleave', () => th.classList.remove('th-drag-over'));
+    th.addEventListener('drop', e => {
+      e.preventDefault();
+      th.classList.remove('th-drag-over');
+      const fromCol = e.dataTransfer.getData('text/plain');
+      const toCol   = th.dataset.col;
+      if (!fromCol || fromCol === toCol) return;
+      const ord = loadColOrder();
+      const fi  = ord.indexOf(fromCol);
+      const ti  = ord.indexOf(toCol);
+      if (fi === -1 || ti === -1) return;
+      ord.splice(fi, 1);
+      ord.splice(ti, 0, fromCol);
+      saveColOrder(ord);
+      applyColLayout();
     });
   });
 
@@ -2722,6 +2760,9 @@ tbody td:last-child { border-right: none; }
 }
 .col-resize-handle:hover,
 .col-resize-handle.dragging { background: #1a73e8; }
+thead th { cursor: grab; }
+thead th.th-drag-over { border-left: 2px solid #1a73e8 !important; }
+thead th.th-dragging  { opacity: .45; }
 
 /* Channel colors */
 .ch-chat { color: #1a73e8; }
@@ -3386,6 +3427,7 @@ const DEFAULT_COL_WIDTHS = [90, 55, 90, 90, 100, 110, 90, 120, 140, 340, 90, 120
 function initResizableColumns() {
   const ths = [...document.querySelectorAll('thead th')];
   ths.forEach((th, i) => {
+    // ── Ресайз ──
     const handle = document.createElement('div');
     handle.className = 'col-resize-handle';
     th.appendChild(handle);
@@ -3410,6 +3452,42 @@ function initResizableColumns() {
       document.addEventListener('mousemove', onMove);
       document.addEventListener('mouseup', onUp);
       e.preventDefault();
+    });
+
+    // ── Drag-to-reorder ──
+    if (!th.dataset.col) return;
+    th.draggable = true;
+    th.addEventListener('dragstart', e => {
+      e.dataTransfer.setData('text/plain', th.dataset.col);
+      e.dataTransfer.effectAllowed = 'move';
+      setTimeout(() => th.classList.add('th-dragging'), 0);
+    });
+    th.addEventListener('dragend', () => {
+      th.classList.remove('th-dragging');
+      document.querySelectorAll('thead th').forEach(t => t.classList.remove('th-drag-over'));
+    });
+    th.addEventListener('dragover', e => {
+      if (!e.dataTransfer.types.includes('text/plain')) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      document.querySelectorAll('thead th').forEach(t => t.classList.remove('th-drag-over'));
+      if (th.dataset.col !== e.dataTransfer.getData('text/plain')) th.classList.add('th-drag-over');
+    });
+    th.addEventListener('dragleave', () => th.classList.remove('th-drag-over'));
+    th.addEventListener('drop', e => {
+      e.preventDefault();
+      th.classList.remove('th-drag-over');
+      const fromCol = e.dataTransfer.getData('text/plain');
+      const toCol   = th.dataset.col;
+      if (!fromCol || fromCol === toCol) return;
+      const ord = loadColOrder();
+      const fi  = ord.indexOf(fromCol);
+      const ti  = ord.indexOf(toCol);
+      if (fi === -1 || ti === -1) return;
+      ord.splice(fi, 1);
+      ord.splice(ti, 0, fromCol);
+      saveColOrder(ord);
+      applyColLayout();
     });
   });
   restoreColWidths();
