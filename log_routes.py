@@ -2061,7 +2061,7 @@ function applyColLayout() {
   if (!style) { style = document.createElement('style'); style.id = 'col-hidden-style'; document.head.appendChild(style); }
   style.textContent = [...hidden].map(col =>
     'th[data-col="' + col + '"], td[data-col="' + col + '"] { display:none !important; }'
-  ).join('\n');
+  ).join(' ');
 }
 
 // ── Панель настройки столбцов ──────────────────────────────────────────────
