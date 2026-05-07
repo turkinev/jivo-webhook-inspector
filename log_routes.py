@@ -1115,6 +1115,71 @@ mark.hl { background: #ffe566; color: inherit; border-radius: 2px; padding: 0 1p
 
 .no-data { text-align: center; padding: 60px 20px; color: #aaa; font-size: 14px; }
 
+/* ── Кнопка и панель управления столбцами ── */
+.btn-cols {
+  display: flex; align-items: center; gap: 5px;
+  padding: 5px 11px; border-radius: 6px; border: 1px solid #d0d7e3;
+  background: #fff; font-size: 12px; color: #444; cursor: pointer;
+  transition: background .15s, border-color .15s;
+}
+.btn-cols:hover { background: #f0f7ff; border-color: #1a73e8; color: #1a73e8; }
+.btn-cols svg { flex-shrink: 0; }
+
+.col-panel {
+  position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
+  z-index: 10000; background: #fff; border-radius: 12px;
+  box-shadow: 0 12px 48px rgba(0,0,0,.18); width: 280px;
+  max-height: 80vh; display: flex; flex-direction: column;
+  font-size: 13px;
+}
+.col-panel-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 16px 10px; border-bottom: 1px solid #f0f0f0;
+  font-weight: 600; color: #222; font-size: 14px;
+}
+.col-panel-head button {
+  background: none; border: none; font-size: 18px; cursor: pointer;
+  color: #aaa; line-height: 1; padding: 2px 4px; border-radius: 4px;
+}
+.col-panel-head button:hover { background: #f5f5f5; color: #333; }
+.col-panel-hint {
+  padding: 6px 16px 8px; font-size: 11px; color: #aaa; border-bottom: 1px solid #f0f0f0;
+}
+.col-panel-list {
+  overflow-y: auto; padding: 6px 0; flex: 1;
+}
+.col-panel-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 16px; cursor: grab; user-select: none;
+  border-radius: 6px; margin: 1px 6px; transition: background .1s;
+}
+.col-panel-item:hover { background: #f5f8ff; }
+.col-panel-item.dragging { opacity: .45; background: #e8f0fe; }
+.col-panel-item.drag-over { border-top: 2px solid #1a73e8; }
+.col-panel-item .drag-handle {
+  color: #ccc; font-size: 14px; flex-shrink: 0; cursor: grab;
+}
+.col-panel-item input[type=checkbox] { cursor: pointer; accent-color: #1a73e8; width:15px; height:15px; flex-shrink:0; }
+.col-panel-item label { cursor: pointer; flex: 1; }
+.col-panel-foot {
+  display: flex; gap: 8px; padding: 10px 16px 14px; border-top: 1px solid #f0f0f0;
+}
+.col-panel-foot button {
+  flex: 1; padding: 7px; border-radius: 6px; border: 1px solid #d0d7e3;
+  background: #fff; font-size: 12px; cursor: pointer; color: #444;
+  transition: background .15s;
+}
+.col-panel-foot button.primary {
+  background: #1a73e8; color: #fff; border-color: #1a73e8; font-weight: 600;
+}
+.col-panel-foot button.primary:hover { background: #1558b0; }
+.col-panel-foot button:not(.primary):hover { background: #f5f5f5; }
+
+.col-panel-backdrop {
+  position: fixed; inset: 0; z-index: 9999;
+  background: rgba(0,0,0,.25);
+}
+
 /* Manual rows */
 tr[data-manual="1"] td:first-child { border-left: 2px solid #d0c8a0; }
 tr[data-manual="1"] .editable[data-field="problem_summary"] {
@@ -1272,7 +1337,27 @@ tr.dialog-row td { padding: 0 !important; background: #f8f9fa; border-bottom: 2p
   <div class="filterbar-actions">
     <button class="btn" onclick="load()">Применить</button>
     <button class="btn btn-green" id="btn_add" onclick="addManualRow()">+ Строка</button>
+    <button class="btn-cols" onclick="openColPanel()" title="Настроить столбцы">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+        <rect x="1" y="1" width="4" height="14" rx="1"/><rect x="6" y="1" width="4" height="14" rx="1"/><rect x="11" y="1" width="4" height="14" rx="1"/>
+      </svg>
+      Столбцы
+    </button>
     <span class="filterbar-count" id="count"></span>
+  </div>
+</div>
+
+<div id="col-panel-backdrop" class="col-panel-backdrop" style="display:none" onclick="closeColPanel()"></div>
+<div id="col-panel" class="col-panel" style="display:none">
+  <div class="col-panel-head">
+    <span>Настройка столбцов</span>
+    <button onclick="closeColPanel()">×</button>
+  </div>
+  <div class="col-panel-hint">Перетащите для изменения порядка · Чекбокс — скрыть/показать</div>
+  <div class="col-panel-list" id="col-panel-list"></div>
+  <div class="col-panel-foot">
+    <button onclick="resetColLayout()">Сбросить</button>
+    <button class="primary" onclick="closeColPanel()">Готово</button>
   </div>
 </div>
 
@@ -1291,13 +1376,13 @@ tr.dialog-row td { padding: 0 !important; background: #f8f9fa; border-bottom: 2p
         <th data-col="subcategory">Подкатегория</th>
         <th data-col="problem_summary">Причина обращения</th>
         <th data-col="result">Результат</th>
-        <th data-col="rating" style="text-align:center">Оценка</th>
-        <th data-col="complexity" style="text-align:center">Сложность</th>
         <th data-col="comment">Комм. поддержки</th>
         <th data-col="comment_manager">Комм. менеджера</th>
         <th data-col="responsible_dept" class="col-dept">Отв. отдел</th>
         <th data-col="channel">Канал</th>
         <th data-col="chat_id">№ обращения</th>
+        <th data-col="rating" style="text-align:center">Оценка</th>
+        <th data-col="complexity" style="text-align:center">Сложность</th>
       </tr>
     </thead>
     <tbody id="tbody">
@@ -1485,6 +1570,7 @@ async function load(resetPage = true) {
     render(data.rows);
     highlightSearch((document.getElementById('filter_search') || {}).value || '');
     applyHiddenCols();
+    applyColLayout();
     renderPagination(data.page, data.pages, data.total);
     document.getElementById('count').textContent =
       `${data.total} записей`;
@@ -1637,23 +1723,25 @@ function render(rows) {
       : `<td data-field="complexity" data-value="${complexityVal}" style="text-align:center">${renderRatingWidget('complexity', complexityVal, canRate)}</td>`;
 
     return `<tr data-id="${rowKey}"${isManual ? ' data-manual="1"' : ''}>
-      <td class="col-date">${dateHtml}</td>
-      <td class="col-time">${timeHtml}</td>
-      <td>${operatorHtml}</td>
-      <td>${isManual ? selCell('source_type', r.source_type) : selCell('source_type', r.source_type)}</td>
-      <td class="col-author" title="${esc(r.author)}">${authorHtml}</td>
-      <td class="col-login">${esc(extractLogin(r.author, r.source_type))}</td>
-      <td>${appealHtml}</td>
-      <td>${isManual ? selCell('category', r.category)    : selCell('category', r.category)}</td>
-      <td>${isManual ? selCell('subcategory', r.subcategory) : selCell('subcategory', r.subcategory)}</td>
-      <td class="col-summary">${summaryHtml}</td>
-      <td>${resultHtml}</td>
-      ${isManual ? '<td><span style="color:#bbb">—</span></td><td><span style="color:#bbb">—</span></td>' : `<td data-field="rating" data-value="${ratingVal}" style="text-align:center">${renderRatingWidget('rating', ratingVal, canRate)}</td><td data-field="complexity" data-value="${complexityVal}" style="text-align:center">${renderRatingWidget('complexity', complexityVal, canRate)}</td>`}
-      <td>${commentCell('comment', r.comment, r.comment_author, 'Добавить...')}</td>
-      <td>${commentCell('comment_manager', r.comment_manager, r.comment_manager_author, 'Добавить...')}</td>
-      <td class="col-dept">${isManual ? '<span style="color:#bbb">—</span>' : deptCell(r.responsible_dept || '')}</td>
-      <td class="col-channel ${chClass}">${channelHtml}</td>
-      <td class="col-login" style="color:#aaa">${isManual ? '' : esc(String(r.chat_id))}</td>
+      <td data-col="date" class="col-date">${dateHtml}</td>
+      <td data-col="time" class="col-time">${timeHtml}</td>
+      <td data-col="operator">${operatorHtml}</td>
+      <td data-col="source_type">${selCell('source_type', r.source_type)}</td>
+      <td data-col="author" class="col-author" title="${esc(r.author)}">${authorHtml}</td>
+      <td data-col="login" class="col-login">${esc(extractLogin(r.author, r.source_type))}</td>
+      <td data-col="appeal_type">${appealHtml}</td>
+      <td data-col="category">${selCell('category', r.category)}</td>
+      <td data-col="subcategory">${selCell('subcategory', r.subcategory)}</td>
+      <td data-col="problem_summary" class="col-summary">${summaryHtml}</td>
+      <td data-col="result">${resultHtml}</td>
+      <td data-col="comment">${commentCell('comment', r.comment, r.comment_author, 'Добавить...')}</td>
+      <td data-col="comment_manager">${commentCell('comment_manager', r.comment_manager, r.comment_manager_author, 'Добавить...')}</td>
+      <td data-col="responsible_dept" class="col-dept">${isManual ? '<span style="color:#bbb">—</span>' : deptCell(r.responsible_dept || '')}</td>
+      <td data-col="channel" class="col-channel ${chClass}">${channelHtml}</td>
+      <td data-col="chat_id" class="col-login" style="color:#aaa">${isManual ? '' : esc(String(r.chat_id))}</td>
+      ${isManual
+        ? '<td data-col="rating"><span style="color:#bbb">—</span></td><td data-col="complexity"><span style="color:#bbb">—</span></td>'
+        : `<td data-col="rating" data-value="${ratingVal}" style="text-align:center">${renderRatingWidget('rating', ratingVal, canRate)}</td><td data-col="complexity" data-value="${complexityVal}" style="text-align:center">${renderRatingWidget('complexity', complexityVal, canRate)}</td>`}
     </tr>`;
   }).join('');
 
@@ -1934,6 +2022,124 @@ function openSelect(cell) {
   setTimeout(() => {
     document.addEventListener('click', _cellDdOutside);
   }, 0);
+}
+
+// ── Управление столбцами: порядок и видимость ──────────────────────────────
+const COL_ORDER_KEY  = 'log_col_order_v1';
+const COL_HIDDEN_KEY = 'log_col_hidden_v1';
+
+function getDefaultColOrder() {
+  return [...document.querySelectorAll('thead th[data-col]')].map(th => th.dataset.col);
+}
+function loadColOrder()  { try { return JSON.parse(localStorage.getItem(COL_ORDER_KEY))  || getDefaultColOrder(); } catch(_){ return getDefaultColOrder(); } }
+function saveColOrder(o) { localStorage.setItem(COL_ORDER_KEY, JSON.stringify(o)); }
+function loadColHidden() { try { return JSON.parse(localStorage.getItem(COL_HIDDEN_KEY)) || []; } catch(_){ return []; } }
+function saveColHidden(h){ localStorage.setItem(COL_HIDDEN_KEY, JSON.stringify(h)); }
+
+function applyColLayout() {
+  const order  = loadColOrder();
+  const hidden = new Set(loadColHidden());
+  const theadTr = document.querySelector('thead tr');
+  if (!theadTr) return;
+
+  // Переставляем <th> по порядку
+  order.forEach(col => {
+    const th = theadTr.querySelector('th[data-col="' + col + '"]');
+    if (th) theadTr.appendChild(th);
+  });
+
+  // Переставляем <td> в каждой строке
+  document.querySelectorAll('tbody tr').forEach(tr => {
+    order.forEach(col => {
+      const td = tr.querySelector('td[data-col="' + col + '"]');
+      if (td) tr.appendChild(td);
+    });
+  });
+
+  // Применяем видимость через <style>
+  let style = document.getElementById('col-hidden-style');
+  if (!style) { style = document.createElement('style'); style.id = 'col-hidden-style'; document.head.appendChild(style); }
+  style.textContent = [...hidden].map(col =>
+    'th[data-col="' + col + '"], td[data-col="' + col + '"] { display:none !important; }'
+  ).join('\n');
+}
+
+// ── Панель настройки столбцов ──────────────────────────────────────────────
+const COL_LABELS = {
+  date:'Дата', time:'Время', operator:'Оператор', source_type:'Тип автора',
+  author:'Автор', login:'Логин', appeal_type:'Тип', category:'Категория',
+  subcategory:'Подкатегория', problem_summary:'Причина обращения',
+  result:'Результат', comment:'Комм. поддержки', comment_manager:'Комм. менеджера',
+  responsible_dept:'Отв. отдел', channel:'Канал', chat_id:'№ обращения',
+  rating:'Оценка', complexity:'Сложность',
+};
+
+function openColPanel() {
+  renderColPanelList();
+  document.getElementById('col-panel-backdrop').style.display = '';
+  document.getElementById('col-panel').style.display = '';
+}
+function closeColPanel() {
+  document.getElementById('col-panel-backdrop').style.display = 'none';
+  document.getElementById('col-panel').style.display = 'none';
+}
+function resetColLayout() {
+  localStorage.removeItem(COL_ORDER_KEY);
+  localStorage.removeItem(COL_HIDDEN_KEY);
+  location.reload();
+}
+
+function renderColPanelList() {
+  const order  = loadColOrder();
+  const hidden = new Set(loadColHidden());
+  const list   = document.getElementById('col-panel-list');
+  list.innerHTML = '';
+
+  order.forEach(col => {
+    const li = document.createElement('div');
+    li.className = 'col-panel-item';
+    li.draggable = true;
+    li.dataset.col = col;
+    const checked = !hidden.has(col);
+    li.innerHTML =
+      '<span class="drag-handle">⠿</span>' +
+      '<input type="checkbox" id="chk_' + col + '"' + (checked ? ' checked' : '') + '>' +
+      '<label for="chk_' + col + '">' + (COL_LABELS[col] || col) + '</label>';
+
+    li.querySelector('input').addEventListener('change', function() {
+      const h = loadColHidden();
+      if (this.checked) { const i = h.indexOf(col); if (i !== -1) h.splice(i,1); }
+      else              { if (!h.includes(col)) h.push(col); }
+      saveColHidden(h);
+      applyColLayout();
+    });
+
+    // Drag-to-reorder
+    li.addEventListener('dragstart', e => {
+      e.dataTransfer.setData('text/plain', col);
+      li.classList.add('dragging');
+    });
+    li.addEventListener('dragend', () => li.classList.remove('dragging'));
+    li.addEventListener('dragover', e => { e.preventDefault(); li.classList.add('drag-over'); });
+    li.addEventListener('dragleave', () => li.classList.remove('drag-over'));
+    li.addEventListener('drop', e => {
+      e.preventDefault();
+      li.classList.remove('drag-over');
+      const fromCol = e.dataTransfer.getData('text/plain');
+      if (fromCol === col) return;
+      const ord = loadColOrder();
+      const fi  = ord.indexOf(fromCol);
+      const ti  = ord.indexOf(col);
+      if (fi === -1 || ti === -1) return;
+      ord.splice(fi, 1);
+      ord.splice(ti, 0, fromCol);
+      saveColOrder(ord);
+      applyColLayout();
+      renderColPanelList();
+    });
+
+    list.appendChild(li);
+  });
 }
 
 // ── Ресайз столбцов ────────────────────────────────────────────────────────
@@ -2751,8 +2957,6 @@ mark.hl { background: #ffe566; color: inherit; border-radius: 2px; padding: 0 1p
         <th data-col="subcategory">Подкатегория</th>
         <th data-col="problem_summary">Причина обращения</th>
         <th data-col="result">Результат</th>
-        <th data-col="rating" style="text-align:center">Оценка</th>
-        <th data-col="complexity" style="text-align:center">Сложность</th>
         <th data-col="comment">Комм. поддержки</th>
         <th data-col="comment_manager">Комм. менеджера</th>
         <th data-col="responsible_dept" class="col-dept">Отв. отдел</th>
