@@ -132,6 +132,11 @@ def ensure_manual_table():
         ) ENGINE = ReplacingMergeTree(updated_at)
         ORDER BY id
     """)
+    for col in ["rating UInt8 DEFAULT 0", "complexity UInt8 DEFAULT 0"]:
+        try:
+            ch_execute(f"ALTER TABLE manual_log_entries ADD COLUMN IF NOT EXISTS {col}")
+        except Exception:
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -178,7 +183,9 @@ def get_manual_rows(df: str, dt: str, operator: str = "", channel: str = "",
                 time, operator, source_type, author,
                 ''                         AS login,
                 appeal_type, category, subcategory,
-                problem_summary, result, comment, channel
+                problem_summary, result, comment, channel,
+                ifNull(rating,     0)      AS rating,
+                ifNull(complexity, 0)      AS complexity
             FROM manual_log_entries FINAL
             WHERE {where}
             ORDER BY date DESC, time DESC
@@ -745,6 +752,8 @@ class ManualEditPayload(BaseModel):
     problem_summary: Optional[str] = ""
     result:          Optional[str] = ""
     comment:         Optional[str] = ""
+    rating:          Optional[int] = None
+    complexity:      Optional[int] = None
 
 
 @router.delete("/api/log/manual/{row_id}")
@@ -770,11 +779,13 @@ def api_edit_manual(row_id: int, payload: ManualEditPayload):
         "problem_summary": payload.problem_summary or "",
         "result":        payload.result or "",
         "comment":       payload.comment or "",
+        "rating":        int(payload.rating)     if payload.rating     is not None else 0,
+        "complexity":    int(payload.complexity) if payload.complexity is not None else 0,
     }, ensure_ascii=False)
     ch_execute(
         "INSERT INTO manual_log_entries "
         "(id, date, time, channel, operator, source_type, author, appeal_type, "
-        "category, subcategory, problem_summary, result, comment) "
+        "category, subcategory, problem_summary, result, comment, rating, complexity) "
         "FORMAT JSONEachRow",
         data=row.encode("utf-8"),
     )
@@ -2088,11 +2099,7 @@ function render(rows) {
 
     const ratingVal     = parseInt(r.rating     || 0);
     const complexityVal = parseInt(r.complexity || 0);
-    const canRate = !isManual && canEdit('rating');
-    const ratingHtml     = isManual ? '<span style="color:#bbb">—</span>'
-      : `<td data-field="rating"     data-value="${ratingVal}"    style="text-align:center">${renderRatingWidget('rating',     ratingVal,     canRate)}</td>`;
-    const complexityHtml = isManual ? '<span style="color:#bbb">—</span>'
-      : `<td data-field="complexity" data-value="${complexityVal}" style="text-align:center">${renderRatingWidget('complexity', complexityVal, canRate)}</td>`;
+    const canRate = canEdit('rating');
 
     return `<tr data-id="${rowKey}"${isManual ? ' data-manual="1"' : ''}>
       <td data-col="date" class="col-date">${dateHtml}</td>
@@ -2111,9 +2118,8 @@ function render(rows) {
       <td data-col="responsible_dept" class="col-dept">${isManual ? '<span style="color:#bbb">—</span>' : deptCell(r.responsible_dept || '')}</td>
       <td data-col="channel" class="col-channel ${chClass}">${channelHtml}</td>
       <td data-col="chat_id" class="col-login" style="color:#aaa">${isManual ? '' : esc(String(r.chat_id))}</td>
-      ${isManual
-        ? '<td data-col="rating"><span style="color:#bbb">—</span></td><td data-col="complexity"><span style="color:#bbb">—</span></td>'
-        : `<td data-col="rating" data-value="${ratingVal}" style="text-align:center">${renderRatingWidget('rating', ratingVal, canRate)}</td><td data-col="complexity" data-value="${complexityVal}" style="text-align:center">${renderRatingWidget('complexity', complexityVal, canRate)}</td>`}
+      <td data-col="rating" data-field="rating" data-value="${ratingVal}" style="text-align:center">${renderRatingWidget('rating', ratingVal, canRate)}</td>
+      <td data-col="complexity" data-field="complexity" data-value="${complexityVal}" style="text-align:center">${renderRatingWidget('complexity', complexityVal, canRate)}</td>
     </tr>`;
   }).join('');
 
@@ -2312,11 +2318,14 @@ async function setRating(dot, n) {
   td.dataset.value = newVal;
   td.innerHTML = renderRatingWidget(field, newVal, true);
 
-  const chatId = row.dataset.id;
+  const rowKey = row.dataset.id;
+  const url    = (rowKey && rowKey.startsWith('m_'))
+    ? '/api/log/manual/' + rowKey.slice(2)
+    : '/api/log/' + rowKey;
   const body   = {};
   body[field]  = newVal;
   try {
-    await fetch(`/log/api/log/${chatId}`, {
+    await fetch(url, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(body),
