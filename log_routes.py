@@ -1240,6 +1240,7 @@ tbody td {
   padding: 6px 10px;
   border-right: 1px solid #f0f0f0;
   vertical-align: top;
+  text-align: left;
 }
 tbody td:last-child { border-right: none; }
 
@@ -1324,7 +1325,8 @@ mark.hl { background: #ffe566; color: inherit; border-radius: 2px; padding: 0 1p
   cursor: pointer; padding: 3px 7px; border-radius: 5px;
   min-width: 60px; min-height: 20px;
   transition: background .15s;
-  display: flex; align-items: center; gap: 4px;
+  display: flex; align-items: center; justify-content: flex-start; gap: 4px;
+  text-align: left;
 }
 .select-cell:hover { background: #f0f7ff; }
 .select-cell::after {
@@ -3235,6 +3237,7 @@ tbody td {
   padding: 6px 10px;
   border-right: 1px solid #f0f0f0;
   vertical-align: top;
+  text-align: left;
 }
 tbody td:last-child { border-right: none; }
 
@@ -3300,7 +3303,8 @@ mark.hl { background: #ffe566; color: inherit; border-radius: 2px; padding: 0 1p
   cursor: pointer; padding: 3px 7px; border-radius: 5px;
   min-width: 60px; min-height: 20px;
   transition: background .15s;
-  display: flex; align-items: center; gap: 4px;
+  display: flex; align-items: center; justify-content: flex-start; gap: 4px;
+  text-align: left;
 }
 .select-cell:hover { background: #f0f7ff; }
 .select-cell::after {
