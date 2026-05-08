@@ -92,12 +92,10 @@ def _fetch_ls_thread(cur, claim_id: int) -> str:
         if not entry:
             return ""
 
-        thread_id      = entry["thread_id"]
-        start_at       = entry["start_at"]
-        entry_msg_id   = entry["message_id"]  # само сообщение-точка входа исключаем
+        thread_id = entry["thread_id"]
+        start_at  = entry["start_at"]
 
-        # Шаг 3: все сообщения треда в течение суток начиная с точки входа,
-        # кроме самого триггерного сообщения (автоматическое «Добрый день» и т.п.)
+        # Шаг 3: все сообщения треда в течение суток начиная с точки входа
         cur.execute(f"""
             SELECT m.text, m.created_at,
                    COALESCE(u.login_display, CONCAT('user_', m.author_user_id)) AS author_name
@@ -105,11 +103,10 @@ def _fetch_ls_thread(cur, claim_id: int) -> str:
             LEFT JOIN {CLAIM_USER_DB}.user u ON u.id = m.author_user_id
             WHERE m.thread_id = %s
               AND m.is_deleted = 0
-              AND m.id != %s
               AND m.created_at >= %s
               AND m.created_at <= DATE_ADD(%s, INTERVAL 1 DAY)
             ORDER BY m.created_at ASC
-        """, (thread_id, entry_msg_id, start_at, start_at))
+        """, (thread_id, start_at, start_at))
 
         messages = cur.fetchall()
         if not messages:
