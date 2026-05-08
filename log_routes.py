@@ -193,8 +193,8 @@ def get_manual_rows(df: str, dt: str, operator: str = "", channel: str = "",
 # Права доступа по группам Authentik
 # ---------------------------------------------------------------------------
 
-ALLOWED_GROUPS  = {"communication-managers", "communication-support"}
-MANAGED_GROUPS  = ["communication-managers", "communication-support"]
+ALLOWED_GROUPS  = {"communication-leads", "communication-managers", "communication-support"}
+MANAGED_GROUPS  = ["communication-leads", "communication-managers", "communication-support"]
 
 # Все колонки журнала: (field_name, display_name)
 COLUMN_DEFS = [
@@ -220,6 +220,15 @@ COLUMN_DEFS = [
 
 # Права по умолчанию (когда БД пуста)
 _DEFAULT_COL_PERMS = {
+    "communication-leads": {
+        "date": "view", "time": "view", "operator": "view",
+        "source_type": "view", "author": "view", "login": "view",
+        "appeal_type": "view", "category": "view", "subcategory": "view",
+        "problem_summary": "view", "result": "view", "comment": "view",
+        "comment_manager": "view", "responsible_dept": "view",
+        "channel": "view", "chat_id": "view",
+        "rating": "edit", "complexity": "edit",
+    },
     "communication-managers": {
         "date": "view", "time": "view", "operator": "view",
         "source_type": "edit", "author": "view", "login": "view",
@@ -274,8 +283,19 @@ def get_permissions(user: dict):
     if not groups & ALLOWED_GROUPS:
         return None  # нет доступа
 
+    # Приоритет: leads > managers > support
+    is_lead    = "communication-leads"    in groups
     is_manager = "communication-managers" in groups
-    group_name = "communication-managers" if is_manager else "communication-support"
+
+    if is_lead:
+        group_name = "communication-leads"
+        role       = "lead"
+    elif is_manager:
+        group_name = "communication-managers"
+        role       = "manager"
+    else:
+        group_name = "communication-support"
+        role       = "support"
 
     col_perms = load_col_perms(group_name)
     editable = [c for c, a in col_perms.items() if a == "edit"]
@@ -284,8 +304,9 @@ def get_permissions(user: dict):
     return {
         "editable":   editable,
         "hidden":     hidden,
-        "role":       "manager" if is_manager else "support",
-        "is_manager": is_manager,
+        "role":       role,
+        "is_manager": is_manager,   # оставляем для обратной совместимости
+        "is_lead":    is_lead,
     }
 
 
@@ -620,7 +641,7 @@ def api_edit(chat_id: int, payload: EditPayload):
 
 @router.get("/api/admin/perms")
 def api_admin_perms_get(user: dict = Depends(require_user)):
-    if "communication-managers" not in set(user.get("groups", [])):
+    if "communication-leads" not in set(user.get("groups", [])):
         return JSONResponse({"error": "Forbidden"}, status_code=403)
     result = {g: load_col_perms(g) for g in MANAGED_GROUPS}
     return JSONResponse(result)
@@ -628,7 +649,7 @@ def api_admin_perms_get(user: dict = Depends(require_user)):
 
 @router.post("/api/admin/perms")
 async def api_admin_perms_save(request: Request, user: dict = Depends(require_user)):
-    if "communication-managers" not in set(user.get("groups", [])):
+    if "communication-leads" not in set(user.get("groups", [])):
         return JSONResponse({"error": "Forbidden"}, status_code=403)
     payload = await request.json()
     valid_cols  = {c for c, _ in COLUMN_DEFS}
@@ -655,11 +676,12 @@ async def api_admin_perms_save(request: Request, user: dict = Depends(require_us
 
 @router.get("/admin/perms", response_class=HTMLResponse)
 def admin_perms_page(user: dict = Depends(require_user)):
-    if "communication-managers" not in set(user.get("groups", [])):
+    if "communication-leads" not in set(user.get("groups", [])):
         from fastapi.responses import HTMLResponse as _HR
         return _HR("<h2 style='font-family:sans-serif;margin:60px auto;text-align:center'>403 — Доступ запрещён</h2>", status_code=403)
     col_labels   = {f: lbl for f, lbl in COLUMN_DEFS}
     group_labels = {
+        "communication-leads":    "Руководители",
         "communication-managers": "Менеджеры",
         "communication-support":  "Поддержка",
     }
@@ -805,7 +827,7 @@ def log_page(user: dict = Depends(require_user)):
             f"<div style='font-family:sans-serif;margin:80px auto;text-align:center'>"
             f"<h2>403 — Доступ запрещён</h2>"
             f"<p style='font-size:14px;color:#888;margin:12px 0'>Пользователь <b>{name}</b> не состоит "
-            f"в группах communication-managers или communication-support</p>"
+            f"в группах communication-leads, communication-managers или communication-support</p>"
             f"<p style='font-size:13px;color:#aaa;margin:6px 0'>Если вас только что добавили в группу — "
             f"выйдите и войдите снова, чтобы сессия обновилась.</p>"
             f"<a href='/auth/logout' style='display:inline-block;margin-top:18px;padding:8px 22px;"
@@ -816,7 +838,7 @@ def log_page(user: dict = Depends(require_user)):
         )
     admin_link = (
         '<a href="/admin/perms" class="topbar-admin">⚙ Права</a>'
-        if perms.get("is_manager") else ""
+        if perms.get("is_lead") else ""
     )
     return (
         _HTML
@@ -2586,7 +2608,7 @@ def day_tracker_page(user: dict = Depends(require_user)):
     perms = get_permissions(user) or {"editable": [], "hidden": [], "role": "support", "is_manager": False}
     admin_link = (
         '<a href="/admin/perms" class="topbar-admin">⚙ Права</a>'
-        if perms.get("is_manager") else ""
+        if perms.get("is_lead") else ""
     )
     return (
         _DAY_HTML
