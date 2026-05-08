@@ -490,12 +490,58 @@ def api_log(
     })
 
 
+def _parse_claim_plain(plain: str) -> list:
+    """
+    Парсит plain_messages обращения (claim) в список сообщений для renderDialog.
+    Формат:
+      [Страница: url]          ← необязательно
+      author: текст обращения
+
+      [Переписка в ЛС:]        ← необязательно
+      DD.MM HH:MM author: текст
+      ...
+    """
+    import re
+    msgs: list = []
+    parts = plain.split("\n\n[Переписка в ЛС:]\n", 1)
+    claim_part = parts[0].strip()
+    ls_part    = parts[1].strip() if len(parts) > 1 else ""
+
+    # Текст обращения — убираем строку [Страница: ...]
+    claim_lines = [l for l in claim_part.splitlines() if not l.startswith("[Страница:")]
+    if claim_lines:
+        claim_text = "\n".join(claim_lines)
+        # Убираем «author: » в начале первой строки
+        m = re.match(r'^[^:]{1,60}: (.+)', claim_text, re.DOTALL)
+        if m:
+            claim_text = m.group(1).strip()
+        msgs.append({"type": "visitor", "message": claim_text, "timestamp": 0, "ts_str": "", "author": ""})
+
+    # ЛС-переписка
+    if ls_part:
+        ls_re = re.compile(r'^(\d{2}\.\d{2} \d{2}:\d{2}) (.+?): (.+)$')
+        for line in ls_part.splitlines():
+            m2 = ls_re.match(line.strip())
+            if m2:
+                msgs.append({
+                    "type":      "ls",
+                    "message":   m2.group(3),
+                    "timestamp": 0,
+                    "ts_str":    m2.group(1),
+                    "author":    m2.group(2),
+                })
+
+    return msgs
+
+
 @router.get("/api/log/dialog/{chat_id}")
 def api_dialog(chat_id: int):
     rows = ch_query(f"""
         SELECT chat_messages_json,
-               ifNull(visitor_name, '')  AS visitor_name,
-               ifNull(operator_name, '') AS operator_name
+               ifNull(plain_messages, '') AS plain_messages,
+               ifNull(source, '')         AS source,
+               ifNull(visitor_name, '')   AS visitor_name,
+               ifNull(operator_name, '')  AS operator_name
         FROM dialogs
         WHERE chat_id = {chat_id}
         LIMIT 1
@@ -508,6 +554,11 @@ def api_dialog(chat_id: int):
         messages = json.loads(r.get("chat_messages_json") or "[]")
     except Exception:
         messages = []
+
+    # Для обращений (claim) — парсим plain_messages в структурированный формат
+    if not messages and r.get("source") == "claim":
+        messages = _parse_claim_plain(r.get("plain_messages", ""))
+
     return JSONResponse({
         "messages": messages,
         "visitor":  r.get("visitor_name", ""),
@@ -1456,6 +1507,8 @@ tr.dialog-row td { padding: 0 !important; background: #f8f9fa; border-bottom: 2p
 .d-bubble.agent   { background: #fff; border: 1px solid #ddd; color: #333; border-bottom-left-radius: 3px; }
 .d-time { font-size: 10px; color: #bbb; margin-top: 3px; }
 .d-empty { color: #aaa; font-style: italic; font-size: 12px; padding: 8px 0; }
+.d-ls-header { font-size: 11px; color: #888; text-align: center; margin: 8px 0 4px; position: relative; }
+.d-ls-header::before, .d-ls-header::after { content: ''; display: inline-block; width: 60px; height: 1px; background: #ddd; vertical-align: middle; margin: 0 8px; }
 .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #ddd; border-top-color: #1a73e8; border-radius: 50%; animation: spin .6s linear infinite; vertical-align: middle; margin-right: 6px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -2691,21 +2744,35 @@ function fmtMsgTime(ts) {
 function renderDialog(data) {
   const msgs = data.messages || [];
   if (!msgs.length) return `<div class="d-empty">Сообщения недоступны</div>`;
-  return msgs.map(m => {
+  let html = '';
+  let lsHeaderAdded = false;
+  msgs.forEach(m => {
     const isV  = m.type === 'visitor';
+    const isLS = m.type === 'ls';
+    // Разделитель перед первым ЛС-сообщением
+    if (isLS && !lsHeaderAdded) {
+      html += `<div class="d-ls-header">Переписка в ЛС</div>`;
+      lsHeaderAdded = true;
+    }
     const cls  = isV ? 'visitor' : 'agent';
-    const name = isV ? esc(data.visitor || 'Клиент') : esc(data.operator || 'Оператор');
+    let name;
+    if (isLS) {
+      name = esc(m.author || '?');
+    } else {
+      name = isV ? esc(data.visitor || 'Клиент') : esc(data.operator || 'Оператор');
+    }
     const text = esc((m.message || '').trim());
     const ts   = m.timestamp || m.ts || m.time || 0;
-    const time = fmtMsgTime(ts);
-    return `<div class="d-msg ${cls}">
+    const time = m.ts_str || fmtMsgTime(ts);
+    html += `<div class="d-msg ${cls}">
       <div class="d-bubble-wrap">
         <div class="d-name">${name}</div>
         <div class="d-bubble ${cls}">${text}</div>
         ${time ? `<div class="d-time">${time}</div>` : ''}
       </div>
     </div>`;
-  }).join('');
+  });
+  return html;
 }
 
 // ── Удаление ручной строки ──────────────────────────────────────────────────
