@@ -2306,11 +2306,10 @@ function renderRatingWidget(field, value, canEdit) {
 }
 
 async function setRating(dot, n) {
-  const td    = dot.closest('td');
-  const row   = dot.closest('tr');
-  const field = td.dataset.field;   // 'rating' или 'complexity'
-  const rowId = row.dataset.id;
-  if (!rowId || rowId.startsWith('m_')) return; // ручные строки — не трогаем
+  const td     = dot.closest('td');
+  const row    = dot.closest('tr');
+  const field  = td.dataset.field;   // 'rating' или 'complexity'
+  const rowKey = row.dataset.id;
 
   // Toggle: повторный клик на ту же цифру сбрасывает в 0
   const current = parseInt(td.dataset.value || '0');
@@ -2318,17 +2317,35 @@ async function setRating(dot, n) {
   td.dataset.value = newVal;
   td.innerHTML = renderRatingWidget(field, newVal, true);
 
-  const rowKey = row.dataset.id;
-  const url    = (rowKey && rowKey.startsWith('m_'))
+  // Собираем ВСЕ поля строки чтобы не затереть другие данные при INSERT
+  const fields = collectFields(row);
+
+  // Читаем оба рейтинговых поля из TD (collectFields их не видит — нет .editable)
+  const rTd = row.querySelector('td[data-field="rating"]');
+  const cTd = row.querySelector('td[data-field="complexity"]');
+  fields.rating     = rTd ? parseInt(rTd.dataset.value     || '0') : 0;
+  fields.complexity = cTd ? parseInt(cTd.dataset.value     || '0') : 0;
+  fields[field]     = newVal; // перезаписываем то, что только что изменили
+
+  // Сохраняем авторов комментариев из DOM
+  const commentEl    = row.querySelector('[data-field="comment"].editable');
+  const commentMgrEl = row.querySelector('[data-field="comment_manager"].editable');
+  function getAuthor(el) {
+    if (!el) return '';
+    const sp = el.closest('.comment-wrap') && el.closest('.comment-wrap').querySelector('.comment-author');
+    return sp ? sp.textContent.replace(/:$/, '').trim() : '';
+  }
+  if (commentEl)    fields.comment_author         = getAuthor(commentEl);
+  if (commentMgrEl) fields.comment_manager_author = getAuthor(commentMgrEl);
+
+  const url = (rowKey && rowKey.startsWith('m_'))
     ? '/api/log/manual/' + rowKey.slice(2)
     : '/api/log/' + rowKey;
-  const body   = {};
-  body[field]  = newVal;
   try {
     await fetch(url, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(body),
+      body: JSON.stringify(fields),
     });
     // вспышка сохранения
     td.querySelectorAll('.rating-dot').forEach(d => d.classList.add('saved'));
