@@ -1973,8 +1973,13 @@ function commentCell(field, value, author, placeholder) {
   const isLead  = PERMS && PERMS.is_lead;
 
   if (!canEdit(field)) {
-    // Нет прав на редактирование — только просмотр
-    return `<div class="comment-wrap">${authorHtml}<span>${esc(value) || '<span style="color:#bbb">—</span>'}</span></div>`;
+    // Нет прав на редактирование — только просмотр.
+    // Скрытый .editable нужен чтобы collectFields/resolveAuthor видели значение
+    // и не затирали comment + comment_author при сохранении других полей.
+    return `<div class="comment-wrap">` +
+      `<span class="editable" data-field="${field}" data-orig="${esc(value)}" data-orig-author="${esc(author)}" style="display:none">${esc(value)}</span>` +
+      `${authorHtml}<span>${esc(value) || '<span style="color:#bbb">—</span>'}</span>` +
+      `</div>`;
   }
   if (!value || isOwner || isLead) {
     // Пустое поле / свой комментарий / руководитель — редактируемо
