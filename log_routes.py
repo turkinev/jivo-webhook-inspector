@@ -2109,12 +2109,26 @@ async function saveRow(row, feedbackEl) {
   const rowKey = row.dataset.id;
   const fields = collectFields(row);
 
-  // Проставляем автора: берём текущего пользователя если комментарий непустой,
-  // иначе очищаем автора (чтобы не висело имя без комментария)
-  if (fields.comment !== undefined)
-    fields.comment_author = fields.comment ? CURRENT_USER : '';
-  if (fields.comment_manager !== undefined)
-    fields.comment_manager_author = fields.comment_manager ? CURRENT_USER : '';
+  // Проставляем автора только если текст комментария реально изменился
+  // (сравниваем с data-orig), иначе сохраняем прежнего автора из DOM
+  const commentEl    = row.querySelector('[data-field="comment"].editable');
+  const commentMgrEl = row.querySelector('[data-field="comment_manager"].editable');
+  if (commentEl) {
+    if (fields.comment !== commentEl.dataset.orig) {
+      fields.comment_author = fields.comment ? CURRENT_USER : '';
+    } else {
+      const sp = commentEl.closest('.comment-wrap') && commentEl.closest('.comment-wrap').querySelector('.comment-author');
+      fields.comment_author = sp ? sp.textContent.replace(/:$/, '').trim() : '';
+    }
+  }
+  if (commentMgrEl) {
+    if (fields.comment_manager !== commentMgrEl.dataset.orig) {
+      fields.comment_manager_author = fields.comment_manager ? CURRENT_USER : '';
+    } else {
+      const sp = commentMgrEl.closest('.comment-wrap') && commentMgrEl.closest('.comment-wrap').querySelector('.comment-author');
+      fields.comment_manager_author = sp ? sp.textContent.replace(/:$/, '').trim() : '';
+    }
+  }
 
   const url = (rowKey && rowKey.startsWith('m_'))
     ? '/api/log/manual/' + rowKey.slice(2)
@@ -3594,10 +3608,24 @@ function collectFields(row) {
 async function saveRow(row, feedbackEl) {
   const chatId = row.dataset.id;
   const fields = collectFields(row);
-  if (fields.comment !== undefined)
-    fields.comment_author = fields.comment ? CURRENT_USER : '';
-  if (fields.comment_manager !== undefined)
-    fields.comment_manager_author = fields.comment_manager ? CURRENT_USER : '';
+  const commentEl    = row.querySelector('[data-field="comment"].editable');
+  const commentMgrEl = row.querySelector('[data-field="comment_manager"].editable');
+  if (commentEl) {
+    if (fields.comment !== commentEl.dataset.orig) {
+      fields.comment_author = fields.comment ? CURRENT_USER : '';
+    } else {
+      const sp = commentEl.closest('.comment-wrap') && commentEl.closest('.comment-wrap').querySelector('.comment-author');
+      fields.comment_author = sp ? sp.textContent.replace(/:$/, '').trim() : '';
+    }
+  }
+  if (commentMgrEl) {
+    if (fields.comment_manager !== commentMgrEl.dataset.orig) {
+      fields.comment_manager_author = fields.comment_manager ? CURRENT_USER : '';
+    } else {
+      const sp = commentMgrEl.closest('.comment-wrap') && commentMgrEl.closest('.comment-wrap').querySelector('.comment-author');
+      fields.comment_manager_author = sp ? sp.textContent.replace(/:$/, '').trim() : '';
+    }
+  }
   try {
     const resp = await fetch('/api/day-tracker/' + chatId, {
       method:  'POST',
