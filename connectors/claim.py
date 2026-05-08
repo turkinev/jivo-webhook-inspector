@@ -119,7 +119,9 @@ def _fetch_ls_thread(cur, claim_id: int) -> str:
             ts     = msg["created_at"]
             ts_str = ts.strftime("%d.%m %H:%M") if isinstance(ts, datetime) else str(ts)[:16]
             if text:
-                lines.append(f"{ts_str} {author}: {text}")
+                # Экранируем переносы строк чтобы каждое сообщение оставалось в одной строке
+                text_escaped = text.replace("\n", "\\n")
+                lines.append(f"{ts_str} {author}: {text_escaped}")
 
         return "\n".join(lines) if len(lines) > 1 else ""
 

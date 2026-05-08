@@ -525,7 +525,7 @@ def _parse_claim_plain(plain: str) -> list:
             if m2:
                 msgs.append({
                     "type":      "ls",
-                    "message":   m2.group(3),
+                    "message":   m2.group(3).replace("\\n", "\n"),
                     "timestamp": 0,
                     "ts_str":    m2.group(1),
                     "author":    m2.group(2),
