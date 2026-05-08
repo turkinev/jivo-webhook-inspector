@@ -1770,7 +1770,7 @@ async function exportExcel() {
   btn.innerHTML = '<span class="spinner"></span> Формируем...';
   try {
     const params = buildFilterParams();
-    const resp = await fetch('/log/api/log/export?' + params.toString());
+    const resp = await fetch('/api/log/export?' + params.toString());
     if (!resp.ok) {
       const err = await resp.json().catch(() => ({}));
       alert(err.error || 'Ошибка экспорта');
