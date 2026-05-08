@@ -1260,6 +1260,17 @@ thead th.th-dragging  { opacity: .45; }
 .editable.saved  { animation: flash 1s ease forwards; }
 .comment-wrap { display: flex; flex-direction: column; gap: 1px; }
 .comment-author { font-weight: 600; font-size: 11px; color: #888; line-height: 1.2; }
+.comment-ro { font-size: 12px; line-height: 1.4; white-space: pre-wrap; word-break: break-word; }
+.btn-append-comment { background: none; border: 1px dashed #ccc; border-radius: 4px; color: #888; font-size: 11px; cursor: pointer; padding: 1px 6px; margin-top: 2px; align-self: flex-start; }
+.btn-append-comment:hover { border-color: #888; color: #555; }
+.comment-append-area { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
+.comment-append-input { min-height: 28px; font-size: 12px; padding: 3px 6px; border: 1px solid #ccc; border-radius: 4px; outline: none; white-space: pre-wrap; word-break: break-word; }
+.comment-append-input:empty::before { content: attr(data-placeholder); color: #bbb; }
+.comment-append-input:focus { border-color: #4a90d9; background: #fffbea; }
+.comment-append-actions { display: flex; gap: 6px; }
+.btn-app-save { background: #4a90d9; color: #fff; border: none; border-radius: 4px; font-size: 11px; cursor: pointer; padding: 2px 10px; }
+.btn-app-save:hover { background: #2a70b9; }
+.btn-app-cancel { background: none; border: 1px solid #ccc; border-radius: 4px; font-size: 11px; cursor: pointer; padding: 2px 8px; color: #666; }
 mark.hl { background: #ffe566; color: inherit; border-radius: 2px; padding: 0 1px; font-style: normal; }
 .select-cell {
   cursor: pointer; padding: 3px 7px; border-radius: 5px;
@@ -1945,10 +1956,93 @@ function editCell(field, value, placeholder) {
 
 function commentCell(field, value, author, placeholder) {
   const authorHtml = author ? `<span class="comment-author">${esc(author)}:</span>` : '';
-  if (canEdit(field)) {
-    return `<div class="comment-wrap">${authorHtml}<div class="editable" contenteditable="true" data-field="${field}" data-orig="${esc(value)}" data-placeholder="${placeholder}">${esc(value)}</div></div>`;
+  const isOwner = !author || author === CURRENT_USER;
+  const isLead  = PERMS && PERMS.is_lead;
+
+  if (!canEdit(field)) {
+    // Нет прав на редактирование — только просмотр
+    return `<div class="comment-wrap">${authorHtml}<span>${esc(value) || '<span style="color:#bbb">—</span>'}</span></div>`;
   }
-  return `<div class="comment-wrap">${authorHtml}<span>${esc(value) || '<span style="color:#bbb">—</span>'}</span></div>`;
+  if (!value || isOwner || isLead) {
+    // Пустое поле / свой комментарий / руководитель — редактируемо
+    return `<div class="comment-wrap">${authorHtml}<div class="editable" contenteditable="true" data-field="${field}" data-orig="${esc(value)}" data-orig-author="${esc(author)}" data-placeholder="${placeholder}">${esc(value)}</div></div>`;
+  }
+  // Чужой комментарий, не руководитель: readonly + кнопка «+ Добавить»
+  return `<div class="comment-wrap">${authorHtml}` +
+    `<div class="comment-ro">${esc(value)}</div>` +
+    `<span class="editable" data-field="${field}" data-orig="${esc(value)}" data-orig-author="${esc(author)}" style="display:none">${esc(value)}</span>` +
+    `<button class="btn-append-comment" onclick="showAppend(this)">+ Добавить</button>` +
+    `<div class="comment-append-area" style="display:none">` +
+      `<div class="comment-append-input" contenteditable="true" data-placeholder="Ваш комментарий..."></div>` +
+      `<div class="comment-append-actions">` +
+        `<button class="btn-app-save" onclick="saveAppend(this,'${field}')">Сохранить</button>` +
+        `<button class="btn-app-cancel" onclick="hideAppend(this)">Отмена</button>` +
+      `</div>` +
+    `</div>` +
+  `</div>`;
+}
+
+function showAppend(btn) {
+  btn.style.display = 'none';
+  const area = btn.nextElementSibling; // .comment-append-area
+  area.style.display = '';
+  area.querySelector('.comment-append-input').focus();
+}
+
+function hideAppend(anyBtn) {
+  const area    = anyBtn.closest('.comment-append-area');
+  const showBtn = area.previousElementSibling; // .btn-append-comment
+  area.querySelector('.comment-append-input').textContent = '';
+  area.style.display = 'none';
+  showBtn.style.display = '';
+}
+
+async function saveAppend(btn, field) {
+  const area    = btn.closest('.comment-append-area');
+  const input   = area.querySelector('.comment-append-input');
+  const newText = input.textContent.trim();
+  if (!newText) { hideAppend(btn); return; }
+
+  const wrap   = area.closest('.comment-wrap');
+  const row    = area.closest('tr');
+  const rowKey = row.dataset.id;
+
+  const hiddenSpan   = wrap.querySelector(`.editable[data-field="${field}"]`);
+  const existingText = hiddenSpan ? hiddenSpan.textContent : '';
+  const combined     = existingText + '\n\n' + CURRENT_USER + ': ' + newText;
+
+  // Полный payload чтобы не затереть другие поля
+  const allFields  = collectFields(row);
+  allFields[field] = combined;
+
+  // Автора оригинального комментария НЕ меняем
+  const authorSpan = wrap.querySelector('.comment-author');
+  const origAuthor = authorSpan ? authorSpan.textContent.replace(/:$/, '').trim() : '';
+  if (field === 'comment')         allFields.comment_author         = origAuthor;
+  if (field === 'comment_manager') allFields.comment_manager_author = origAuthor;
+
+  // Сохраняем автора другого комментария
+  const otherField     = field === 'comment' ? 'comment_manager' : 'comment';
+  const otherAuthorKey = field === 'comment' ? 'comment_manager_author' : 'comment_author';
+  const otherEl        = row.querySelector(`.editable[data-field="${otherField}"]`);
+  if (otherEl) {
+    const otherWrap = otherEl.closest && otherEl.closest('.comment-wrap');
+    const otherSp   = otherWrap && otherWrap.querySelector('.comment-author');
+    allFields[otherAuthorKey] = otherSp ? otherSp.textContent.replace(/:$/, '').trim() : '';
+  }
+
+  const url = rowKey.startsWith('m_') ? '/api/log/manual/' + rowKey.slice(2) : '/api/log/' + rowKey;
+  btn.disabled = true;
+  try {
+    const r = await fetch(url, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(allFields) });
+    if (r.ok) {
+      if (hiddenSpan) { hiddenSpan.textContent = combined; hiddenSpan.dataset.orig = combined; }
+      const roDiv = wrap.querySelector('.comment-ro');
+      if (roDiv) roDiv.textContent = combined;
+      hideAppend(btn);
+    }
+  } catch(e) { console.error(e); }
+  btn.disabled = false;
 }
 
 function deptCell(value) {
@@ -2057,7 +2151,9 @@ async function onBlur(e) {
           authorSpan.className = 'comment-author';
           wrap.insertBefore(authorSpan, wrap.firstChild);
         }
-        authorSpan.textContent = CURRENT_USER + ':';
+        const origAuthor = el.dataset.origAuthor || '';
+        // origAuthor уже обновлён в resolveAuthor, читаем готовое значение
+        authorSpan.textContent = (origAuthor || CURRENT_USER) + ':';
       } else if (authorSpan) {
         authorSpan.remove();
       }
@@ -2109,26 +2205,29 @@ async function saveRow(row, feedbackEl) {
   const rowKey = row.dataset.id;
   const fields = collectFields(row);
 
-  // Проставляем автора только если текст комментария реально изменился
-  // (сравниваем с data-orig), иначе сохраняем прежнего автора из DOM
+  // Автор комментария:
+  // - если текст не изменился → сохраняем прежнего автора из DOM
+  // - если изменился и редактор = руководитель, а автор чужой → "Оригинал (ред. Руководитель)"
+  // - иначе → текущий пользователь
   const commentEl    = row.querySelector('[data-field="comment"].editable');
   const commentMgrEl = row.querySelector('[data-field="comment_manager"].editable');
-  if (commentEl) {
-    if (fields.comment !== commentEl.dataset.orig) {
-      fields.comment_author = fields.comment ? CURRENT_USER : '';
+  function resolveAuthor(el, newVal, authorKey) {
+    if (!el) return;
+    if (newVal !== el.dataset.orig) {
+      const origAuthor = el.dataset.origAuthor || '';
+      if (PERMS.is_lead && origAuthor && origAuthor !== CURRENT_USER) {
+        fields[authorKey] = origAuthor + ' (ред. ' + CURRENT_USER + ')';
+      } else {
+        fields[authorKey] = newVal ? CURRENT_USER : '';
+      }
+      el.dataset.origAuthor = fields[authorKey]; // обновляем на будущее
     } else {
-      const sp = commentEl.closest('.comment-wrap') && commentEl.closest('.comment-wrap').querySelector('.comment-author');
-      fields.comment_author = sp ? sp.textContent.replace(/:$/, '').trim() : '';
+      const sp = el.closest('.comment-wrap') && el.closest('.comment-wrap').querySelector('.comment-author');
+      fields[authorKey] = sp ? sp.textContent.replace(/:$/, '').trim() : '';
     }
   }
-  if (commentMgrEl) {
-    if (fields.comment_manager !== commentMgrEl.dataset.orig) {
-      fields.comment_manager_author = fields.comment_manager ? CURRENT_USER : '';
-    } else {
-      const sp = commentMgrEl.closest('.comment-wrap') && commentMgrEl.closest('.comment-wrap').querySelector('.comment-author');
-      fields.comment_manager_author = sp ? sp.textContent.replace(/:$/, '').trim() : '';
-    }
-  }
+  resolveAuthor(commentEl,    fields.comment,         'comment_author');
+  resolveAuthor(commentMgrEl, fields.comment_manager, 'comment_manager_author');
 
   const url = (rowKey && rowKey.startsWith('m_'))
     ? '/api/log/manual/' + rowKey.slice(2)
@@ -3077,6 +3176,17 @@ thead th.th-dragging  { opacity: .45; }
 .editable.saved  { animation: flash 1s ease forwards; }
 .comment-wrap { display: flex; flex-direction: column; gap: 1px; }
 .comment-author { font-weight: 600; font-size: 11px; color: #888; line-height: 1.2; }
+.comment-ro { font-size: 12px; line-height: 1.4; white-space: pre-wrap; word-break: break-word; }
+.btn-append-comment { background: none; border: 1px dashed #ccc; border-radius: 4px; color: #888; font-size: 11px; cursor: pointer; padding: 1px 6px; margin-top: 2px; align-self: flex-start; }
+.btn-append-comment:hover { border-color: #888; color: #555; }
+.comment-append-area { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
+.comment-append-input { min-height: 28px; font-size: 12px; padding: 3px 6px; border: 1px solid #ccc; border-radius: 4px; outline: none; white-space: pre-wrap; word-break: break-word; }
+.comment-append-input:empty::before { content: attr(data-placeholder); color: #bbb; }
+.comment-append-input:focus { border-color: #4a90d9; background: #fffbea; }
+.comment-append-actions { display: flex; gap: 6px; }
+.btn-app-save { background: #4a90d9; color: #fff; border: none; border-radius: 4px; font-size: 11px; cursor: pointer; padding: 2px 10px; }
+.btn-app-save:hover { background: #2a70b9; }
+.btn-app-cancel { background: none; border: 1px solid #ccc; border-radius: 4px; font-size: 11px; cursor: pointer; padding: 2px 8px; color: #666; }
 mark.hl { background: #ffe566; color: inherit; border-radius: 2px; padding: 0 1px; font-style: normal; }
 
 .select-cell {
@@ -3510,7 +3620,76 @@ function renderPagination(page, pages, total) {
 
 function commentCell(field, value, author, placeholder) {
   const authorHtml = author ? `<span class="comment-author">${esc(author)}:</span>` : '';
-  return `<div class="comment-wrap">${authorHtml}<div class="editable" contenteditable="true" data-field="${field}" data-orig="${esc(value)}" data-placeholder="${placeholder}">${esc(value)}</div></div>`;
+  const isOwner = !author || author === CURRENT_USER;
+  const isLead  = PERMS && PERMS.is_lead;
+  if (!value || isOwner || isLead) {
+    return `<div class="comment-wrap">${authorHtml}<div class="editable" contenteditable="true" data-field="${field}" data-orig="${esc(value)}" data-orig-author="${esc(author)}" data-placeholder="${placeholder}">${esc(value)}</div></div>`;
+  }
+  return `<div class="comment-wrap">${authorHtml}` +
+    `<div class="comment-ro">${esc(value)}</div>` +
+    `<span class="editable" data-field="${field}" data-orig="${esc(value)}" data-orig-author="${esc(author)}" style="display:none">${esc(value)}</span>` +
+    `<button class="btn-append-comment" onclick="showAppend(this)">+ Добавить</button>` +
+    `<div class="comment-append-area" style="display:none">` +
+      `<div class="comment-append-input" contenteditable="true" data-placeholder="Ваш комментарий..."></div>` +
+      `<div class="comment-append-actions">` +
+        `<button class="btn-app-save" onclick="saveAppend(this,'${field}')">Сохранить</button>` +
+        `<button class="btn-app-cancel" onclick="hideAppend(this)">Отмена</button>` +
+      `</div>` +
+    `</div>` +
+  `</div>`;
+}
+
+function showAppend(btn) {
+  btn.style.display = 'none';
+  const area = btn.nextElementSibling;
+  area.style.display = '';
+  area.querySelector('.comment-append-input').focus();
+}
+
+function hideAppend(anyBtn) {
+  const area    = anyBtn.closest('.comment-append-area');
+  const showBtn = area.previousElementSibling;
+  area.querySelector('.comment-append-input').textContent = '';
+  area.style.display = 'none';
+  showBtn.style.display = '';
+}
+
+async function saveAppend(btn, field) {
+  const area    = btn.closest('.comment-append-area');
+  const input   = area.querySelector('.comment-append-input');
+  const newText = input.textContent.trim();
+  if (!newText) { hideAppend(btn); return; }
+  const wrap   = area.closest('.comment-wrap');
+  const row    = area.closest('tr');
+  const chatId = row.dataset.id;
+  const hiddenSpan   = wrap.querySelector(`.editable[data-field="${field}"]`);
+  const existingText = hiddenSpan ? hiddenSpan.textContent : '';
+  const combined     = existingText + '\n\n' + CURRENT_USER + ': ' + newText;
+  const allFields    = collectFields(row);
+  allFields[field]   = combined;
+  const authorSpan = wrap.querySelector('.comment-author');
+  const origAuthor = authorSpan ? authorSpan.textContent.replace(/:$/, '').trim() : '';
+  if (field === 'comment')         allFields.comment_author         = origAuthor;
+  if (field === 'comment_manager') allFields.comment_manager_author = origAuthor;
+  const otherField     = field === 'comment' ? 'comment_manager' : 'comment';
+  const otherAuthorKey = field === 'comment' ? 'comment_manager_author' : 'comment_author';
+  const otherEl        = row.querySelector(`.editable[data-field="${otherField}"]`);
+  if (otherEl) {
+    const otherWrap = otherEl.closest && otherEl.closest('.comment-wrap');
+    const otherSp   = otherWrap && otherWrap.querySelector('.comment-author');
+    allFields[otherAuthorKey] = otherSp ? otherSp.textContent.replace(/:$/, '').trim() : '';
+  }
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/day-tracker/' + chatId, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(allFields) });
+    if (r.ok) {
+      if (hiddenSpan) { hiddenSpan.textContent = combined; hiddenSpan.dataset.orig = combined; }
+      const roDiv = wrap.querySelector('.comment-ro');
+      if (roDiv) roDiv.textContent = combined;
+      hideAppend(btn);
+    }
+  } catch(e) { console.error(e); }
+  btn.disabled = false;
 }
 
 function render(rows) {
@@ -3575,7 +3754,8 @@ async function onBlur(e) {
           authorSpan.className = 'comment-author';
           wrap.insertBefore(authorSpan, wrap.firstChild);
         }
-        authorSpan.textContent = CURRENT_USER + ':';
+        const origAuthor = el.dataset.origAuthor || '';
+        authorSpan.textContent = (origAuthor || CURRENT_USER) + ':';
       } else if (authorSpan) {
         authorSpan.remove();
       }
@@ -3610,22 +3790,23 @@ async function saveRow(row, feedbackEl) {
   const fields = collectFields(row);
   const commentEl    = row.querySelector('[data-field="comment"].editable');
   const commentMgrEl = row.querySelector('[data-field="comment_manager"].editable');
-  if (commentEl) {
-    if (fields.comment !== commentEl.dataset.orig) {
-      fields.comment_author = fields.comment ? CURRENT_USER : '';
+  function resolveAuthor(el, newVal, authorKey) {
+    if (!el) return;
+    if (newVal !== el.dataset.orig) {
+      const origAuthor = el.dataset.origAuthor || '';
+      if (PERMS.is_lead && origAuthor && origAuthor !== CURRENT_USER) {
+        fields[authorKey] = origAuthor + ' (ред. ' + CURRENT_USER + ')';
+      } else {
+        fields[authorKey] = newVal ? CURRENT_USER : '';
+      }
+      el.dataset.origAuthor = fields[authorKey];
     } else {
-      const sp = commentEl.closest('.comment-wrap') && commentEl.closest('.comment-wrap').querySelector('.comment-author');
-      fields.comment_author = sp ? sp.textContent.replace(/:$/, '').trim() : '';
+      const sp = el.closest('.comment-wrap') && el.closest('.comment-wrap').querySelector('.comment-author');
+      fields[authorKey] = sp ? sp.textContent.replace(/:$/, '').trim() : '';
     }
   }
-  if (commentMgrEl) {
-    if (fields.comment_manager !== commentMgrEl.dataset.orig) {
-      fields.comment_manager_author = fields.comment_manager ? CURRENT_USER : '';
-    } else {
-      const sp = commentMgrEl.closest('.comment-wrap') && commentMgrEl.closest('.comment-wrap').querySelector('.comment-author');
-      fields.comment_manager_author = sp ? sp.textContent.replace(/:$/, '').trim() : '';
-    }
-  }
+  resolveAuthor(commentEl,    fields.comment,         'comment_author');
+  resolveAuthor(commentMgrEl, fields.comment_manager, 'comment_manager_author');
   try {
     const resp = await fetch('/api/day-tracker/' + chatId, {
       method:  'POST',
