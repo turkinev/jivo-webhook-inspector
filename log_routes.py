@@ -347,7 +347,7 @@ def api_log(
 
     def q(s): return s.replace("'", "\\'")
 
-    where = f"toDate(r.ts) BETWEEN '{df}' AND '{dt}'"
+    where = f"toDate(d.event_timestamp) BETWEEN '{df}' AND '{dt}'"
     if operator:
         where += f" AND d.operator_name = '{q(operator)}'"
     if channel == "Чат":
@@ -397,12 +397,6 @@ def api_log(
     total_rows = ch_query(f"""
         SELECT count() AS total
         FROM dialogs d
-        JOIN (
-            SELECT chat_id, max(received_at) AS ts
-            FROM raw_dialogs
-            WHERE event_name = 'chat_finished'
-            GROUP BY chat_id
-        ) r ON d.chat_id = r.chat_id
         LEFT JOIN dialog_analysis a ON d.chat_id = a.chat_id AND d.source = a.source
         LEFT JOIN (SELECT * FROM support_log_edits FINAL) e ON d.chat_id = e.chat_id
         LEFT JOIN (SELECT * FROM day_tracker_edits FINAL) t ON d.chat_id = t.chat_id
@@ -415,8 +409,8 @@ def api_log(
         SELECT
             d.chat_id                                                              AS chat_id,
             toString(d.chat_id)                                                    AS row_key,
-            toString(toDate(r.ts))                                                 AS date,
-            substring(toString(r.ts), 12, 5)                                       AS time,
+            toString(toDate(d.event_timestamp))                                    AS date,
+            substring(toString(d.event_timestamp), 12, 5)                         AS time,
             ifNull(d.operator_name, '')                                            AS operator,
             ifNull(d.visitor_name, '')                                             AS author,
             toString(ifNull(d.visitor_id, 0))                                      AS login,
@@ -437,17 +431,11 @@ def api_log(
             ifNull(e.rating,     0)                                                AS rating,
             ifNull(e.complexity, 0)                                                AS complexity
         FROM dialogs d
-        JOIN (
-            SELECT chat_id, max(received_at) AS ts
-            FROM raw_dialogs
-            WHERE event_name = 'chat_finished'
-            GROUP BY chat_id
-        ) r ON d.chat_id = r.chat_id
         LEFT JOIN dialog_analysis a ON d.chat_id = a.chat_id AND d.source = a.source
         LEFT JOIN (SELECT * FROM support_log_edits FINAL) e ON d.chat_id = e.chat_id
         LEFT JOIN (SELECT * FROM day_tracker_edits FINAL) t ON d.chat_id = t.chat_id
         WHERE {where}
-        ORDER BY r.ts DESC
+        ORDER BY d.event_timestamp DESC
         LIMIT {PER_PAGE} OFFSET {offset}
         FORMAT JSONEachRow
     """)
@@ -558,7 +546,7 @@ def api_log_export(
 
     def q(s): return s.replace("'", "\\'")
 
-    where = f"toDate(r.ts) BETWEEN '{df}' AND '{dt}'"
+    where = f"toDate(d.event_timestamp) BETWEEN '{df}' AND '{dt}'"
     if operator:    where += f" AND d.operator_name = '{q(operator)}'"
     if channel == "Чат":    where += " AND d.source = 'jivo'"
     elif channel == "ЛС":   where += " AND d.source = 'site_pm'"
@@ -584,8 +572,8 @@ def api_log_export(
     rows = ch_query(f"""
         SELECT
             d.chat_id                                                              AS chat_id,
-            toString(toDate(r.ts))                                                 AS date,
-            substring(toString(r.ts), 12, 5)                                       AS time,
+            toString(toDate(d.event_timestamp))                                    AS date,
+            substring(toString(d.event_timestamp), 12, 5)                         AS time,
             ifNull(d.operator_name, '')                                            AS operator,
             ifNull(d.visitor_name, '')                                             AS author,
             toString(ifNull(d.visitor_id, 0))                                      AS login,
@@ -604,17 +592,11 @@ def api_log_export(
             ifNull(e.complexity, 0)                                                AS complexity,
             ifNull(d.plain_messages, '')                                           AS dialog_text
         FROM dialogs d
-        JOIN (
-            SELECT chat_id, max(received_at) AS ts
-            FROM raw_dialogs
-            WHERE event_name = 'chat_finished'
-            GROUP BY chat_id
-        ) r ON d.chat_id = r.chat_id
         LEFT JOIN dialog_analysis a ON d.chat_id = a.chat_id AND d.source = a.source
         LEFT JOIN (SELECT * FROM support_log_edits FINAL) e ON d.chat_id = e.chat_id
         LEFT JOIN (SELECT * FROM day_tracker_edits FINAL) t ON d.chat_id = t.chat_id
         WHERE {where}
-        ORDER BY r.ts DESC
+        ORDER BY d.event_timestamp DESC
         LIMIT 10000
         FORMAT JSONEachRow
     """)
@@ -2835,7 +2817,7 @@ def api_day_tracker(
 
     def q(s): return s.replace("'", "\\'")
 
-    where = f"toDate(r.ts) BETWEEN '{df}' AND '{dt}'"
+    where = f"toDate(d.event_timestamp) BETWEEN '{df}' AND '{dt}'"
     if operator:
         where += f" AND d.operator_name = '{q(operator)}'"
     if channel == "Чат":
