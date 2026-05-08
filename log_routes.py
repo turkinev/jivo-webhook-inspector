@@ -271,7 +271,9 @@ def ensure_col_perms_table():
 
 
 def load_col_perms(group_name: str) -> dict:
-    """Возвращает {column_name: access} для группы. При пустой БД — дефолты."""
+    """Возвращает {column_name: access} для группы.
+    Мёрджит дефолты с БД: БД перекрывает дефолты, новые колонки берутся из дефолтов."""
+    result = dict(_DEFAULT_COL_PERMS.get(group_name, {}))
     try:
         rows = ch_query(f"""
             SELECT column_name, access
@@ -280,10 +282,10 @@ def load_col_perms(group_name: str) -> dict:
             FORMAT JSONEachRow
         """)
         if rows:
-            return {r["column_name"]: r["access"] for r in rows}
+            result.update({r["column_name"]: r["access"] for r in rows})
     except Exception:
         pass
-    return dict(_DEFAULT_COL_PERMS.get(group_name, {}))
+    return result
 
 
 def get_permissions(user: dict):
