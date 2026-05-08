@@ -10,6 +10,7 @@
   POST /api/log/{chat_id}    — сохранить правки
 """
 
+import io
 import json
 import os
 import urllib.error
@@ -19,7 +20,7 @@ from datetime import date, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 from auth import require_user
 
@@ -515,6 +516,204 @@ def api_dialog(chat_id: int):
         "visitor":  r.get("visitor_name", ""),
         "operator": r.get("operator_name", ""),
     })
+
+
+# ---------------------------------------------------------------------------
+# Export to Excel
+# ---------------------------------------------------------------------------
+
+@router.get("/api/log/export")
+def api_log_export(
+    date_from:   str = Query(default=None),
+    date_to:     str = Query(default=None),
+    operator:    str = Query(default=""),
+    channel:     str = Query(default=""),
+    stype:       str = Query(default=""),
+    category:    str = Query(default=""),
+    subcategory: str = Query(default=""),
+    result:      str = Query(default=""),
+    dept:        str = Query(default=""),
+    author:      str = Query(default=""),
+    login:       str = Query(default=""),
+    search:      str = Query(default=""),
+    user: dict = Depends(require_user),
+):
+    try:
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    except ImportError:
+        return JSONResponse({"error": "openpyxl не установлен: pip install openpyxl"}, status_code=500)
+
+    df = date_from or str(date.today() - timedelta(days=7))
+    dt = date_to   or str(date.today())
+
+    def q(s): return s.replace("'", "\\'")
+
+    where = f"toDate(r.ts) BETWEEN '{df}' AND '{dt}'"
+    if operator:    where += f" AND d.operator_name = '{q(operator)}'"
+    if channel == "Чат":    where += " AND d.source = 'jivo'"
+    elif channel == "ЛС":   where += " AND d.source = 'site_pm'"
+    elif channel == "Жалоба": where += " AND d.source = 'claim'"
+    elif channel:           where += " AND 1=0"
+    if stype:       where += f" AND if(e.source_type!='',e.source_type,ifNull(a.source_type,''))='{q(stype)}'"
+    if category:    where += f" AND if(e.category!='',e.category,ifNull(a.category,''))='{q(category)}'"
+    if subcategory: where += f" AND if(e.subcategory!='',e.subcategory,ifNull(a.subcategory,''))='{q(subcategory)}'"
+    if result:      where += f" AND if(e.result!='' AND e.result IS NOT NULL,e.result,ifNull(a.resolution_status,''))='{q(result)}'"
+    if dept:        where += f" AND ifNull(t.responsible_dept,'')='{q(dept)}'"
+    if author:      where += f" AND ifNull(d.visitor_name,'') ILIKE '%{q(author)}%'"
+    if login and len(login) >= 3: where += f" AND ifNull(d.visitor_name,'') ILIKE '%{q(login)}%'"
+    if search and len(search) >= 3:
+        sq = q(search)
+        where += (
+            f" AND (ifNull(d.visitor_name,'') ILIKE '%{sq}%'"
+            f" OR ifNull(d.operator_name,'') ILIKE '%{sq}%'"
+            f" OR ifNull(a.user_problem_summary,'') ILIKE '%{sq}%'"
+            f" OR if(e.category!='',e.category,ifNull(a.category,'')) ILIKE '%{sq}%'"
+            f")"
+        )
+
+    rows = ch_query(f"""
+        SELECT
+            d.chat_id                                                              AS chat_id,
+            toString(toDate(r.ts))                                                 AS date,
+            substring(toString(r.ts), 12, 5)                                       AS time,
+            ifNull(d.operator_name, '')                                            AS operator,
+            ifNull(d.visitor_name, '')                                             AS author,
+            toString(ifNull(d.visitor_id, 0))                                      AS login,
+            ifNull(a.contact_reason, '')                                           AS appeal_type,
+            if(e.source_type  != '', e.source_type,  ifNull(a.source_type, ''))   AS source_type,
+            if(e.category     != '', e.category,     ifNull(a.category, ''))      AS category,
+            if(e.subcategory  != '', e.subcategory,  ifNull(a.subcategory, ''))   AS subcategory,
+            ifNull(a.user_problem_summary, '')                                     AS problem_summary,
+            if(e.result IS NOT NULL AND e.result != '',
+               e.result, ifNull(a.resolution_status, ''))                          AS result,
+            ifNull(e.comment, '')                                                  AS comment,
+            ifNull(e.comment_manager, '')                                          AS comment_manager,
+            ifNull(t.responsible_dept, '')                                         AS responsible_dept,
+            multiIf(d.source='jivo','Чат',d.source='site_pm','ЛС',d.source='claim','Жалоба',d.source) AS channel,
+            ifNull(e.rating,     0)                                                AS rating,
+            ifNull(e.complexity, 0)                                                AS complexity,
+            ifNull(d.plain_messages, '')                                           AS dialog_text
+        FROM dialogs d
+        JOIN (
+            SELECT chat_id, max(received_at) AS ts
+            FROM raw_dialogs
+            WHERE event_name = 'chat_finished'
+            GROUP BY chat_id
+        ) r ON d.chat_id = r.chat_id
+        LEFT JOIN dialog_analysis a ON d.chat_id = a.chat_id AND d.source = a.source
+        LEFT JOIN (SELECT * FROM support_log_edits FINAL) e ON d.chat_id = e.chat_id
+        LEFT JOIN (SELECT * FROM day_tracker_edits FINAL) t ON d.chat_id = t.chat_id
+        WHERE {where}
+        ORDER BY r.ts DESC
+        LIMIT 10000
+        FORMAT JSONEachRow
+    """)
+
+    # Ручные строки
+    manual = get_manual_rows(df, dt, operator, channel, stype, category, subcategory, result,
+                             author=author, login=login, search=search, dept=dept)
+
+    all_rows = sorted(rows + manual, key=lambda r: (r.get("date",""), r.get("time","")), reverse=True)
+
+    # ── Сборка Excel ──────────────────────────────────────────────────────────
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Обращения"
+
+    HEADERS = [
+        ("Дата",              12), ("Время",        8),  ("Оператор",         18),
+        ("Тип автора",        14), ("Автор",        22), ("Логин",            16),
+        ("Тип обращения",     16), ("Категория",    22), ("Подкатегория",     26),
+        ("Причина обращения", 40), ("Результат",    14), ("Оценка",           8),
+        ("Сложность",         10), ("Комм. поддержки", 30), ("Комм. менеджера", 30),
+        ("Отв. отдел",        16), ("Канал",        12), ("№ обращения",      14),
+        ("Диалог",            60),
+    ]
+
+    # Стиль заголовка
+    hdr_fill = PatternFill("solid", fgColor="1A73E8")
+    hdr_font = Font(bold=True, color="FFFFFF", size=10)
+    hdr_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    thin = Side(style="thin", color="D0D0D0")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    for col_idx, (hdr, width) in enumerate(HEADERS, 1):
+        cell = ws.cell(row=1, column=col_idx, value=hdr)
+        cell.font       = hdr_font
+        cell.fill       = hdr_fill
+        cell.alignment  = hdr_align
+        cell.border     = border
+        ws.column_dimensions[cell.column_letter].width = width
+
+    ws.row_dimensions[1].height = 28
+    ws.freeze_panes = "A2"
+
+    # Стили строк
+    fill_even = PatternFill("solid", fgColor="F8FAFF")
+    cell_align = Alignment(vertical="top", wrap_text=True)
+    cell_align_center = Alignment(horizontal="center", vertical="top")
+
+    for row_idx, r in enumerate(all_rows, 2):
+        fill = fill_even if row_idx % 2 == 0 else None
+        is_manual = r.get("is_manual", False)
+
+        def fmt_rating(val):
+            v = int(val or 0)
+            return str(v) if v else ""
+
+        values = [
+            r.get("date", "").replace("-", ".") if "-" in r.get("date","") else r.get("date",""),
+            r.get("time", ""),
+            r.get("operator", ""),
+            r.get("source_type", ""),
+            r.get("author", ""),
+            r.get("login", ""),
+            r.get("appeal_type", ""),
+            r.get("category", ""),
+            r.get("subcategory", ""),
+            r.get("problem_summary", ""),
+            r.get("result", ""),
+            fmt_rating(r.get("rating", 0)),
+            fmt_rating(r.get("complexity", 0)),
+            r.get("comment", ""),
+            r.get("comment_manager", ""),
+            r.get("responsible_dept", ""),
+            r.get("channel", ""),
+            "" if is_manual else str(r.get("chat_id", "")),
+            r.get("dialog_text", "") if not is_manual else "",
+        ]
+
+        for col_idx, val in enumerate(values, 1):
+            cell = ws.cell(row=row_idx, column=col_idx, value=val)
+            cell.border = border
+            cell.alignment = cell_align_center if col_idx in (1, 2, 12, 13, 18) else cell_align
+            if fill:
+                cell.fill = fill
+            if is_manual:
+                cell.font = Font(color="888888", size=9)
+            else:
+                cell.font = Font(size=9)
+
+        # Высота строки — побольше если есть диалог
+        dialog = values[-1]
+        lines = min(dialog.count("\n") + 1, 30) if dialog else 1
+        ws.row_dimensions[row_idx].height = max(16, min(lines * 13, 300))
+
+    # Итого строк
+    ws.cell(row=len(all_rows) + 3, column=1,
+            value=f"Итого: {len(all_rows)} обращений").font = Font(italic=True, color="888888", size=9)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    fname = f"обращения_{df}_{dt}.xlsx"
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{urllib.parse.quote(fname)}"},
+    )
 
 
 @router.post("/api/log/manual")
@@ -1368,6 +1567,13 @@ tr.dialog-row td { padding: 0 !important; background: #f8f9fa; border-bottom: 2p
       </svg>
       Столбцы
     </button>
+    <button class="btn-cols" id="btn-export" onclick="exportExcel()" title="Выгрузить в Excel">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+        <path d="M2 2h7l4 4v8a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="1.2"/>
+        <path d="M9 2v4h4M5 9l2 2.5L9 9M7 11.5V7" stroke="currentColor" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+      </svg>
+      Excel
+    </button>
     <span class="filterbar-count" id="count"></span>
   </div>
 </div>
@@ -1539,6 +1745,53 @@ function updateSubcatFilter() {
 }
 
 function goPage(p) { currentPage = p; load(false); }
+
+function buildFilterParams() {
+  const params = new URLSearchParams();
+  const v = id => (document.getElementById(id) || {}).value || '';
+  params.set('date_from',  v('date_from'));
+  params.set('date_to',    v('date_to'));
+  params.set('operator',   v('filter_operator'));
+  params.set('channel',    v('filter_channel'));
+  params.set('stype',      v('filter_stype'));
+  params.set('category',   v('filter_category'));
+  params.set('subcategory',v('filter_subcategory'));
+  params.set('result',     v('filter_result'));
+  params.set('dept',       v('filter_dept'));
+  params.set('author',     v('filter_author'));
+  params.set('login',      v('filter_login'));
+  params.set('search',     v('filter_search') || '');
+  return params;
+}
+
+async function exportExcel() {
+  const btn = document.getElementById('btn-export');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Формируем...';
+  try {
+    const params = buildFilterParams();
+    const resp = await fetch('/log/api/log/export?' + params.toString());
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      alert(err.error || 'Ошибка экспорта');
+      return;
+    }
+    const blob = await resp.blob();
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    const cd   = resp.headers.get('Content-Disposition') || '';
+    const m    = cd.match(/filename\*?=(?:UTF-8'')?([^;]+)/i);
+    a.download = m ? decodeURIComponent(m[1]) : 'обращения.xlsx';
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch(e) {
+    alert('Ошибка: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M2 2h7l4 4v8a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M9 2v4h4M5 9l2 2.5L9 9M7 11.5V7" stroke="currentColor" stroke-width="1.2" fill="none" stroke-linecap="round"/></svg> Excel';
+  }
+}
 
 async function load(resetPage = true) {
   if (resetPage) currentPage = 1;
