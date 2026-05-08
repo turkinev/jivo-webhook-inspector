@@ -2009,7 +2009,7 @@ async function saveAppend(btn, field) {
 
   const hiddenSpan   = wrap.querySelector(`.editable[data-field="${field}"]`);
   const existingText = hiddenSpan ? hiddenSpan.textContent : '';
-  const combined     = existingText + '\n\n' + CURRENT_USER + ': ' + newText;
+  const combined     = existingText + '\\n\\n' + CURRENT_USER + ': ' + newText;
 
   // Полный payload чтобы не затереть другие поля
   const allFields  = collectFields(row);
@@ -3664,7 +3664,7 @@ async function saveAppend(btn, field) {
   const chatId = row.dataset.id;
   const hiddenSpan   = wrap.querySelector(`.editable[data-field="${field}"]`);
   const existingText = hiddenSpan ? hiddenSpan.textContent : '';
-  const combined     = existingText + '\n\n' + CURRENT_USER + ': ' + newText;
+  const combined     = existingText + '\\n\\n' + CURRENT_USER + ': ' + newText;
   const allFields    = collectFields(row);
   allFields[field]   = combined;
   const authorSpan = wrap.querySelector('.comment-author');
