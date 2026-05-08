@@ -1199,6 +1199,8 @@ html, body {
   white-space: nowrap; transition: background .15s;
 }
 .btn:hover { background: #1557b0; }
+.btn-reset { background: none; border: 1px solid #ccc; border-radius: 6px; color: #888; font-size: 12px; cursor: pointer; padding: 0 12px; height: 30px; white-space: nowrap; transition: border-color .15s, color .15s; }
+.btn-reset:hover { border-color: #e74c3c; color: #e74c3c; }
 
 /* ── Table wrapper ── */
 .wrap {
@@ -1619,6 +1621,7 @@ tr.dialog-row td { padding: 0 !important; background: #f8f9fa; border-bottom: 2p
   </div>
   <div class="filterbar-actions">
     <button class="btn" onclick="load()">Применить</button>
+    <button class="btn btn-reset" onclick="resetFilters()" title="Сбросить все фильтры">✕ Сбросить</button>
     <button class="btn btn-green" id="btn_add" onclick="addManualRow()">+ Строка</button>
     <button class="btn-cols" onclick="openColPanel()" title="Настроить столбцы">
       <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
@@ -1747,6 +1750,26 @@ function saveFilters() {
       search:      document.getElementById('filter_search').value,
     }));
   } catch(_) {}
+}
+
+function resetFilters() {
+  const today = new Date();
+  const week  = new Date(today); week.setDate(today.getDate() - 7);
+  document.getElementById('date_from').value         = fmt(week);
+  document.getElementById('date_to').value           = fmt(today);
+  document.getElementById('filter_operator').value   = '';
+  document.getElementById('filter_author').value     = '';
+  document.getElementById('filter_login').value      = '';
+  document.getElementById('filter_stype').value      = '';
+  document.getElementById('filter_channel').value    = '';
+  document.getElementById('filter_category').value   = '';
+  document.getElementById('filter_subcategory').value = '';
+  document.getElementById('filter_result').value     = '';
+  document.getElementById('filter_dept').value       = '';
+  const srch = document.getElementById('filter_search');
+  if (srch) srch.value = '';
+  try { localStorage.removeItem(FILTERS_KEY); } catch(_) {}
+  load();
 }
 
 function restoreFilters() {
@@ -3166,6 +3189,8 @@ html, body {
   white-space: nowrap; transition: background .15s;
 }
 .btn:hover { background: #1557b0; }
+.btn-reset { background: none; border: 1px solid #ccc; border-radius: 6px; color: #888; font-size: 12px; cursor: pointer; padding: 0 12px; height: 30px; white-space: nowrap; transition: border-color .15s, color .15s; }
+.btn-reset:hover { border-color: #e74c3c; color: #e74c3c; }
 
 /* ── Table wrapper ── */
 .wrap {
