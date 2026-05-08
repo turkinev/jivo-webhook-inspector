@@ -1335,6 +1335,9 @@ mark.hl { background: #ffe566; color: inherit; border-radius: 2px; padding: 0 1p
 }
 .select-cell:hover::after { color: #1a73e8; }
 .select-cell.saved { animation: flash 1s ease forwards; }
+.select-cell-ro { cursor: default; pointer-events: none; }
+.select-cell-ro::after { display: none; }
+.select-cell-ro:hover { background: none; }
 /* Cell dropdown overlay */
 .cell-dd {
   position: fixed; z-index: 9999;
@@ -2151,7 +2154,7 @@ function render(rows) {
 
     const channelHtml = isManual
       ? `<div class="select-cell" data-field="channel" data-value="${esc(r.channel)}" onclick="openSelect(this)">${esc(r.channel) || '<span style=color:#bbb>—</span>'}</div>`
-      : esc(r.channel);
+      : `<div class="select-cell select-cell-ro">${esc(r.channel) || '<span style=color:#bbb>—</span>'}</div>`;
 
     const dateHtml = isManual
       ? `<button class="del-btn" onclick="deleteManualRow(this,'${rowKey}')" title="Удалить строку">×</button><div class="editable" contenteditable="true" data-field="date" data-orig="${esc(r.date)}" data-placeholder="ДД.ММ.ГГГГ">${fmtDate(r.date)}</div>`
@@ -3313,6 +3316,9 @@ mark.hl { background: #ffe566; color: inherit; border-radius: 2px; padding: 0 1p
 }
 .select-cell:hover::after { color: #1a73e8; }
 .select-cell.saved { animation: flash 1s ease forwards; }
+.select-cell-ro { cursor: default; pointer-events: none; }
+.select-cell-ro::after { display: none; }
+.select-cell-ro:hover { background: none; }
 /* Cell dropdown overlay */
 .cell-dd {
   position: fixed; z-index: 9999;
