@@ -132,7 +132,7 @@ def ensure_manual_table():
         ) ENGINE = ReplacingMergeTree(updated_at)
         ORDER BY id
     """)
-    for col in ["rating UInt8 DEFAULT 0", "complexity UInt8 DEFAULT 0"]:
+    for col in ["rating UInt8 DEFAULT 0", "complexity UInt8 DEFAULT 0", "login String DEFAULT ''"]:
         try:
             ch_execute(f"ALTER TABLE manual_log_entries ADD COLUMN IF NOT EXISTS {col}")
         except Exception:
@@ -161,7 +161,8 @@ def get_manual_rows(df: str, dt: str, operator: str = "", channel: str = "",
         if result:      where += f" AND result      = '{_q(result)}'"
         # Фильтры которых нет у ручных строк — исключаем все ручные строки
         if dept:        return []   # у ручных строк нет отдела
-        if login and len(login) >= 3: return []  # у ручных строк нет логина
+        if login and len(login) >= 3:
+            where += f" AND ifNull(login,'') ILIKE '%{_q(login)}%'"
         if author:      where += f" AND author ILIKE '%{_q(author)}%'"
         if search and len(search) >= 3:
             sq = _q(search)
@@ -181,7 +182,7 @@ def get_manual_rows(df: str, dt: str, operator: str = "", channel: str = "",
                 0                          AS chat_id,
                 toString(date)             AS date,
                 time, operator, source_type, author,
-                ''                         AS login,
+                ifNull(login, '')          AS login,
                 appeal_type, category, subcategory,
                 problem_summary, result, comment, channel,
                 ifNull(rating,     0)      AS rating,
@@ -758,20 +759,46 @@ def api_log_export(
     )
 
 
+class ManualCreatePayload(BaseModel):
+    operator:        Optional[str] = ""
+    source_type:     Optional[str] = ""
+    author:          Optional[str] = ""
+    login:           Optional[str] = ""
+    appeal_type:     Optional[str] = ""
+    category:        Optional[str] = ""
+    subcategory:     Optional[str] = ""
+    problem_summary: Optional[str] = ""
+    result:          Optional[str] = ""
+    channel:         Optional[str] = ""
+
+
 @router.post("/api/log/manual")
-def api_create_manual():
-    """Создаёт новую пустую строку вручную."""
+def api_create_manual(payload: ManualCreatePayload = None):
+    """Создаёт новую строку вручную с начальными данными."""
     ensure_manual_table()
     from datetime import datetime as _dt
     now    = _dt.now()
     new_id = int(now.timestamp() * 1000)
     today  = str(now.date())
     now_time = now.strftime("%H:%M")
+    p = payload or ManualCreatePayload()
+    row = {
+        "id": new_id, "date": today, "time": now_time,
+        "operator":        p.operator        or "",
+        "source_type":     p.source_type     or "",
+        "author":          p.author          or "",
+        "appeal_type":     p.appeal_type     or "",
+        "category":        p.category        or "",
+        "subcategory":     p.subcategory     or "",
+        "problem_summary": p.problem_summary or "",
+        "result":          p.result          or "",
+        "channel":         p.channel         or "",
+    }
     ch_execute(
-        "INSERT INTO manual_log_entries (id, date, time, channel) FORMAT JSONEachRow",
-        data=json.dumps({"id": new_id, "date": today, "time": now_time, "channel": ""}).encode("utf-8"),
+        "INSERT INTO manual_log_entries FORMAT JSONEachRow",
+        data=json.dumps(row).encode("utf-8"),
     )
-    return JSONResponse({"ok": True, "id": new_id, "date": today, "time": now_time})
+    return JSONResponse({"ok": True, "id": new_id, "date": today, "time": now_time, "row": row})
 
 
 class ManualEditPayload(BaseModel):
@@ -781,6 +808,7 @@ class ManualEditPayload(BaseModel):
     operator:        Optional[str] = ""
     source_type:     Optional[str] = ""
     author:          Optional[str] = ""
+    login:           Optional[str] = ""
     appeal_type:     Optional[str] = ""
     category:        Optional[str] = ""
     subcategory:     Optional[str] = ""
@@ -808,6 +836,7 @@ def api_edit_manual(row_id: int, payload: ManualEditPayload):
         "operator":      payload.operator or "",
         "source_type":   payload.source_type or "",
         "author":        payload.author or "",
+        "login":         payload.login or "",
         "appeal_type":   payload.appeal_type or "",
         "category":      payload.category or "",
         "subcategory":   payload.subcategory or "",
@@ -819,7 +848,7 @@ def api_edit_manual(row_id: int, payload: ManualEditPayload):
     }, ensure_ascii=False)
     ch_execute(
         "INSERT INTO manual_log_entries "
-        "(id, date, time, channel, operator, source_type, author, appeal_type, "
+        "(id, date, time, channel, operator, source_type, author, login, appeal_type, "
         "category, subcategory, problem_summary, result, comment, rating, complexity) "
         "FORMAT JSONEachRow",
         data=row.encode("utf-8"),
@@ -1518,6 +1547,24 @@ tr.dialog-row td { padding: 0 !important; background: #f8f9fa; border-bottom: 2p
 .d-ls-header::before, .d-ls-header::after { content: ''; display: inline-block; width: 60px; height: 1px; background: #ddd; vertical-align: middle; margin: 0 8px; }
 .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #ddd; border-top-color: #1a73e8; border-radius: 50%; animation: spin .6s linear infinite; vertical-align: middle; margin-right: 6px; }
 @keyframes spin { to { transform: rotate(360deg); } }
+/* ── Add-row modal ── */
+.modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 1000; align-items: center; justify-content: center; }
+.modal-overlay.open { display: flex; }
+.modal-box { background: #fff; border-radius: 10px; padding: 24px 28px; width: 540px; max-width: 95vw; box-shadow: 0 8px 32px rgba(0,0,0,.2); }
+.modal-box h3 { margin: 0 0 18px; font-size: 15px; color: #333; }
+.modal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; }
+.modal-field { display: flex; flex-direction: column; gap: 4px; }
+.modal-field.full { grid-column: 1 / -1; }
+.modal-field label { font-size: 11px; color: #888; font-weight: 500; }
+.modal-field label .req { color: #e74c3c; margin-left: 2px; }
+.modal-field input, .modal-field select { border: 1px solid #ccc; border-radius: 5px; padding: 5px 8px; font-size: 12px; outline: none; }
+.modal-field input:focus, .modal-field select:focus { border-color: #1a73e8; }
+.modal-field.invalid input, .modal-field.invalid select { border-color: #e74c3c; background: #fff5f5; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+.modal-cancel { background: none; border: 1px solid #ccc; border-radius: 6px; padding: 6px 16px; font-size: 13px; cursor: pointer; color: #666; }
+.modal-cancel:hover { border-color: #999; }
+.modal-submit { background: #1a73e8; color: #fff; border: none; border-radius: 6px; padding: 6px 20px; font-size: 13px; cursor: pointer; font-weight: 500; }
+.modal-submit:hover { background: #1557b0; }
 
 /* ── Пагинация ── */
 .pagination {
@@ -1656,6 +1703,45 @@ tr.dialog-row td { padding: 0 !important; background: #f8f9fa; border-bottom: 2p
   <div class="col-panel-foot">
     <button onclick="resetColLayout()">Сбросить</button>
     <button class="primary" onclick="closeColPanel()">Готово</button>
+  </div>
+</div>
+
+<!-- Modal: добавление строки -->
+<div class="modal-overlay" id="add-row-modal" onclick="if(event.target===this)closeAddModal()">
+  <div class="modal-box">
+    <h3>Новая строка</h3>
+    <div class="modal-grid">
+      <div class="modal-field" id="mf_operator"><label>Оператор<span class="req">*</span></label><input id="mi_operator" type="text" placeholder="Имя оператора"></div>
+      <div class="modal-field" id="mf_source_type"><label>Тип автора<span class="req">*</span></label>
+        <select id="mi_source_type">
+          <option value="">— выберите —</option>
+          <option>Клиент</option><option>ПВЗ</option><option>Сотрудник</option>
+        </select>
+      </div>
+      <div class="modal-field" id="mf_author"><label>Автор<span class="req">*</span></label><input id="mi_author" type="text" placeholder="Имя"></div>
+      <div class="modal-field" id="mf_login"><label>Логин<span class="req">*</span></label><input id="mi_login" type="text" placeholder="Логин"></div>
+      <div class="modal-field" id="mf_appeal_type"><label>Тип<span class="req">*</span></label><input id="mi_appeal_type" type="text" placeholder="Тип обращения"></div>
+      <div class="modal-field" id="mf_channel"><label>Канал<span class="req">*</span></label>
+        <select id="mi_channel"><option value="">— выберите —</option></select>
+      </div>
+      <div class="modal-field" id="mf_category"><label>Категория<span class="req">*</span></label>
+        <select id="mi_category" onchange="updateModalSubcat()"><option value="">— выберите —</option></select>
+      </div>
+      <div class="modal-field" id="mf_subcategory"><label>Подкатегория<span class="req">*</span></label>
+        <select id="mi_subcategory"><option value="">— выберите —</option></select>
+      </div>
+      <div class="modal-field" id="mf_result"><label>Результат<span class="req">*</span></label>
+        <select id="mi_result">
+          <option value="">— выберите —</option>
+          <option>Решено</option><option>Не решено</option><option>Эскалация</option>
+        </select>
+      </div>
+      <div class="modal-field full" id="mf_problem_summary"><label>Причина обращения<span class="req">*</span></label><input id="mi_problem_summary" type="text" placeholder="Кратко опишите суть"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="modal-cancel" onclick="closeAddModal()">Отмена</button>
+      <button class="modal-submit" id="modal-submit-btn" onclick="submitAddModal()">Создать</button>
+    </div>
   </div>
 </div>
 
@@ -2181,7 +2267,7 @@ function render(rows) {
       <td data-col="operator">${operatorHtml}</td>
       <td data-col="source_type">${selCell('source_type', r.source_type)}</td>
       <td data-col="author" class="col-author" title="${esc(r.author)}">${authorHtml}</td>
-      <td data-col="login" class="col-login">${esc(extractLogin(r.author, r.source_type))}</td>
+      <td data-col="login" class="col-login">${isManual ? (r.login ? `<div class="editable" contenteditable="true" data-field="login" data-orig="${esc(r.login)}" data-placeholder="Логин">${esc(r.login)}</div>` : `<div class="editable" contenteditable="true" data-field="login" data-orig="" data-placeholder="Логин"></div>`) : esc(extractLogin(r.author, r.source_type))}</td>
       <td data-col="appeal_type">${appealHtml}</td>
       <td data-col="category">${selCell('category', r.category)}</td>
       <td data-col="subcategory">${selCell('subcategory', r.subcategory)}</td>
@@ -2821,51 +2907,128 @@ async function deleteManualRow(btn, rowKey) {
 }
 
 // ── Добавление ручной строки ────────────────────────────────────────────────
-async function addManualRow() {
-  const btn = document.getElementById('btn_add');
+function addManualRow() {
+  // Заполняем селект каналов из фильтра
+  const fchan = document.getElementById('filter_channel');
+  const mchan = document.getElementById('mi_channel');
+  mchan.innerHTML = '<option value="">— выберите —</option>';
+  if (fchan) Array.from(fchan.options).forEach(o => {
+    if (o.value) mchan.appendChild(new Option(o.text, o.value));
+  });
+  // Заполняем категории из фильтра
+  const fcat = document.getElementById('filter_category');
+  const mcat = document.getElementById('mi_category');
+  mcat.innerHTML = '<option value="">— выберите —</option>';
+  if (fcat) Array.from(fcat.options).forEach(o => {
+    if (o.value) mcat.appendChild(new Option(o.text, o.value));
+  });
+  document.getElementById('mi_subcategory').innerHTML = '<option value="">— выберите —</option>';
+  // Сброс полей и ошибок
+  ['operator','source_type','author','login','appeal_type','channel','category','subcategory','result','problem_summary'].forEach(f => {
+    const el = document.getElementById('mi_' + f);
+    if (el) el.value = '';
+    const mf = document.getElementById('mf_' + f);
+    if (mf) mf.classList.remove('invalid');
+  });
+  document.getElementById('add-row-modal').classList.add('open');
+  setTimeout(() => document.getElementById('mi_operator').focus(), 50);
+}
+
+function closeAddModal() {
+  document.getElementById('add-row-modal').classList.remove('open');
+}
+
+function updateModalSubcat() {
+  const cat  = document.getElementById('mi_category').value;
+  const fcat = document.getElementById('filter_category');
+  // Обновляем подкатегории через тот же механизм что у фильтра
+  const fsub = document.getElementById('filter_subcategory');
+  const msub = document.getElementById('mi_subcategory');
+  msub.innerHTML = '<option value="">— выберите —</option>';
+  if (!cat) return;
+  // Временно ставим значение в filter_category и вызываем updateSubcatFilter
+  const origVal = fcat ? fcat.value : '';
+  if (fcat) fcat.value = cat;
+  updateSubcatFilter();
+  if (fsub) Array.from(fsub.options).forEach(o => {
+    if (o.value) msub.appendChild(new Option(o.text, o.value));
+  });
+  if (fcat) fcat.value = origVal;
+  updateSubcatFilter();
+}
+
+async function submitAddModal() {
+  const REQUIRED = ['operator','source_type','author','login','appeal_type','channel','category','subcategory','result','problem_summary'];
+  let valid = true;
+  const vals = {};
+  REQUIRED.forEach(f => {
+    const el  = document.getElementById('mi_' + f);
+    const mf  = document.getElementById('mf_' + f);
+    const val = el ? el.value.trim() : '';
+    vals[f] = val;
+    if (!val) { if (mf) mf.classList.add('invalid'); valid = false; }
+    else       { if (mf) mf.classList.remove('invalid'); }
+  });
+  if (!valid) return;
+
+  const btn = document.getElementById('modal-submit-btn');
   btn.disabled = true;
+  btn.textContent = 'Создание...';
   try {
-    const resp = await fetch('/api/log/manual', { method: 'POST' });
+    const resp = await fetch('/api/log/manual', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(vals),
+    });
     const data = await resp.json();
     if (!data.ok) throw new Error('Ошибка создания');
-    prependManualRow(data.id, data.date, data.time);
+    closeAddModal();
+    prependManualRow(data.id, data.date, data.time, data.row || {});
   } catch(e) {
     alert('Ошибка: ' + e.message);
   } finally {
     btn.disabled = false;
+    btn.textContent = 'Создать';
   }
 }
 
-function prependManualRow(id, dateStr, timeStr) {
+function prependManualRow(id, dateStr, timeStr, init) {
+  const d   = init || {};
   const rowKey  = 'm_' + id;
   const today   = dateStr || fmt(new Date());
   const nowTime = timeStr || '';
+  const v = (f, fb) => esc(d[f] || fb || '');
+  const sel = (f) => {
+    const val = d[f] || '';
+    return val
+      ? `<div class="select-cell" data-field="${f}" data-value="${esc(val)}" onclick="openSelect(this)">${esc(val)}</div>`
+      : `<div class="select-cell" data-field="${f}" data-value="" onclick="openSelect(this)"><span style="color:#bbb">—</span></div>`;
+  };
   const tr = document.createElement('tr');
   tr.dataset.id     = rowKey;
   tr.dataset.manual = '1';
   tr.innerHTML = `
     <td class="col-date"><button class="del-btn" onclick="deleteManualRow(this,'${rowKey}')" title="Удалить строку">×</button><div class="editable" contenteditable="true" data-field="date" data-orig="${esc(today)}" data-placeholder="ДД.ММ.ГГГГ">${fmtDate(today)}</div></td>
     <td class="col-time"><div class="editable" contenteditable="true" data-field="time" data-orig="${esc(nowTime)}" data-placeholder="ЧЧ:ММ">${esc(nowTime)}</div></td>
-    <td><div class="editable" contenteditable="true" data-field="operator" data-orig="" data-placeholder="Оператор"></div></td>
-    <td><div class="select-cell" data-field="source_type" data-value="" onclick="openSelect(this)"><span style="color:#bbb">—</span></div></td>
-    <td class="col-author"><div class="editable" contenteditable="true" data-field="author" data-orig="" data-placeholder="Автор"></div></td>
-    <td class="col-login"></td>
-    <td><div class="editable" contenteditable="true" data-field="appeal_type" data-orig="" data-placeholder="Тип"></div></td>
-    <td><div class="select-cell" data-field="category"    data-value="" onclick="openSelect(this)"><span style="color:#bbb">—</span></div></td>
-    <td><div class="select-cell" data-field="subcategory" data-value="" onclick="openSelect(this)"><span style="color:#bbb">—</span></div></td>
-    <td><div class="editable" contenteditable="true" data-field="problem_summary" data-orig="" data-placeholder="Суть обращения"></div></td>
-    <td><div class="select-cell" data-field="result"  data-value="" onclick="openSelect(this)"><span style="color:#bbb">—</span></div></td>
+    <td><div class="editable" contenteditable="true" data-field="operator" data-orig="${v('operator')}" data-placeholder="Оператор">${v('operator')}</div></td>
+    <td>${sel('source_type')}</td>
+    <td class="col-author"><div class="editable" contenteditable="true" data-field="author" data-orig="${v('author')}" data-placeholder="Автор">${v('author')}</div></td>
+    <td class="col-login">${v('login')}</td>
+    <td><div class="editable" contenteditable="true" data-field="appeal_type" data-orig="${v('appeal_type')}" data-placeholder="Тип">${v('appeal_type')}</div></td>
+    <td>${sel('category')}</td>
+    <td>${sel('subcategory')}</td>
+    <td><div class="editable" contenteditable="true" data-field="problem_summary" data-orig="${v('problem_summary')}" data-placeholder="Суть обращения">${v('problem_summary')}</div></td>
+    <td>${sel('result')}</td>
     <td><div class="editable" contenteditable="true" data-field="comment" data-orig="" data-placeholder="Добавить..."></div></td>
     <td><div class="editable" contenteditable="true" data-field="comment_manager" data-orig="" data-placeholder="Добавить..."></div></td>
     <td><div class="select-cell select-dept" data-field="responsible_dept" data-value="" onclick="openSelect(this)"><span style="color:#bbb">—</span></div></td>
-    <td class="col-channel"><div class="select-cell" data-field="channel" data-value="" onclick="openSelect(this)"><span style="color:#bbb">—</span></div></td>
+    <td class="col-channel">${sel('channel')}</td>
     <td></td>
   `;
   tr.querySelectorAll('.editable').forEach(el => el.addEventListener('blur', onBlur));
   const tbody = document.getElementById('tbody');
   if (tbody.querySelector('.no-data')) tbody.innerHTML = '';
   tbody.insertBefore(tr, tbody.firstChild);
-  tr.querySelector('.editable').focus();
 }
 
 try { initFilters(); } catch(e) { console.error('initFilters error:', e); }
