@@ -1858,6 +1858,10 @@ async function exportExcel() {
   try {
     const params = buildFilterParams();
     const resp = await fetch('/api/log/export?' + params.toString());
+    if (resp.status === 401) {
+      if (confirm('Сессия истекла. Перейти на страницу входа?')) location.reload();
+      return;
+    }
     if (!resp.ok) {
       const err = await resp.json().catch(() => ({}));
       alert(err.error || 'Ошибка экспорта');

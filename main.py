@@ -29,6 +29,9 @@ app.include_router(log_router)
 
 @app.exception_handler(auth_module.LoginRequired)
 async def login_required_handler(request: Request, exc: auth_module.LoginRequired):
+    # API-запросы (fetch) не умеют следовать кросс-origin редиректам → 401
+    if request.url.path.startswith("/api/"):
+        return JSONResponse({"detail": "session_expired"}, status_code=401)
     authorize_url, state = auth_module.build_authorize_url(exc.next_url)
     resp = RedirectResponse(authorize_url, status_code=302)
     resp.set_cookie("ji_state", state,         max_age=300, httponly=True, samesite="lax")
