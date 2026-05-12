@@ -240,12 +240,8 @@ async def jivo_webhook(request: Request, background_tasks: BackgroundTasks):
     logger.info(f"[JIVO] event={event_type} | chat_id={payload.get('chat_id')}")
 
     if event_type == "chat_finished":
-        try:
-            await insert_to_clickhouse(payload)
-            logger.info(f"[CH] inserted chat_id={payload.get('chat_id')}")
-        except Exception as e:
-            logger.error(f"[CH] insert failed: {e}")
-
+        # Отвечаем Jivo немедленно — вся тяжёлая работа уходит в фон
+        background_tasks.add_task(insert_to_clickhouse, payload)
         background_tasks.add_task(analyze_and_save, payload)
 
     return JSONResponse({"result": "ok"})
