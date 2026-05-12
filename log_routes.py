@@ -1720,7 +1720,14 @@ tr.dialog-row td { padding: 0 !important; background: #f8f9fa; border-bottom: 2p
       </div>
       <div class="modal-field" id="mf_author"><label>Автор<span class="req">*</span></label><input id="mi_author" type="text" placeholder="Имя"></div>
       <div class="modal-field" id="mf_login"><label>Логин<span class="req">*</span></label><input id="mi_login" type="text" placeholder="Логин"></div>
-      <div class="modal-field" id="mf_appeal_type"><label>Тип<span class="req">*</span></label><input id="mi_appeal_type" type="text" placeholder="Тип обращения"></div>
+      <div class="modal-field" id="mf_appeal_type"><label>Тип<span class="req">*</span></label>
+        <select id="mi_appeal_type">
+          <option value="">— выберите —</option>
+          <option>Консультация</option><option>Проблема</option><option>Жалоба</option>
+          <option>Статус</option><option>Запрос действия</option><option>Уточнение</option>
+          <option>Благодарность</option><option>Другое</option>
+        </select>
+      </div>
       <div class="modal-field" id="mf_channel"><label>Канал<span class="req">*</span></label>
         <select id="mi_channel"><option value="">— выберите —</option></select>
       </div>
@@ -2252,7 +2259,7 @@ function render(rows) {
     const timeHtml     = isManual ? `<div class="editable" contenteditable="true" data-field="time"     data-orig="${esc(r.time)}"     data-placeholder="ЧЧ:ММ">${esc(r.time)}</div>`     : esc(r.time);
     const operatorHtml = isManual ? `<div class="editable" contenteditable="true" data-field="operator" data-orig="${esc(r.operator)}" data-placeholder="Оператор">${esc(r.operator)}</div>` : esc(r.operator);
     const authorHtml   = isManual ? `<div class="editable" contenteditable="true" data-field="author"   data-orig="${esc(r.author)}"   data-placeholder="Автор">${esc(r.author)}</div>`     : esc(r.author);
-    const appealHtml   = isManual ? `<div class="editable" contenteditable="true" data-field="appeal_type" data-orig="${esc(r.appeal_type)}" data-placeholder="Тип">${esc(r.appeal_type)}</div>` : esc(r.appeal_type);
+    const appealHtml   = isManual ? `<div class="select-cell" data-field="appeal_type" data-value="${esc(r.appeal_type)}" onclick="openSelect(this)">${esc(r.appeal_type) || '<span style=color:#bbb>—</span>'}</div>` : esc(r.appeal_type);
     const summaryHtml  = isManual
       ? `<div class="editable" contenteditable="true" data-field="problem_summary" data-orig="${esc(r.problem_summary)}" data-placeholder="Суть обращения">${esc(r.problem_summary)}</div>`
       : `<div class="summary-text" onclick="this.classList.toggle('expanded')">${esc(r.problem_summary)}</div>`;
@@ -2551,6 +2558,8 @@ function openSelect(cell) {
     const catCell = row.querySelector('[data-field="category"]');
     const cat = catCell ? catCell.dataset.value : '';
     options = CAT_MAP[cat] || [];
+  } else if (field === 'appeal_type') {
+    options = ['Консультация', 'Проблема', 'Жалоба', 'Статус', 'Запрос действия', 'Уточнение', 'Благодарность', 'Другое'];
   } else if (field === 'result') {
     options = ['Решено', 'Не решено', 'Эскалация'];
   } else if (field === 'channel') {
@@ -3014,7 +3023,7 @@ function prependManualRow(id, dateStr, timeStr, init) {
     <td>${sel('source_type')}</td>
     <td class="col-author"><div class="editable" contenteditable="true" data-field="author" data-orig="${v('author')}" data-placeholder="Автор">${v('author')}</div></td>
     <td class="col-login">${v('login')}</td>
-    <td><div class="editable" contenteditable="true" data-field="appeal_type" data-orig="${v('appeal_type')}" data-placeholder="Тип">${v('appeal_type')}</div></td>
+    <td>${sel('appeal_type')}</td>
     <td>${sel('category')}</td>
     <td>${sel('subcategory')}</td>
     <td><div class="editable" contenteditable="true" data-field="problem_summary" data-orig="${v('problem_summary')}" data-placeholder="Суть обращения">${v('problem_summary')}</div></td>
